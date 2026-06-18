@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NewAGV.Api/NewAGV.Api.csproj" />
+    <Project Path="src/NewAGV.Contracts/NewAGV.Contracts.csproj" />
+    <Project Path="src/NewAGV.Web/NewAGV.Web.csproj" />
+    <Project Path="src/NewAGV.Worker/NewAGV.Worker.csproj" />
+  </Folder>
+</Solution>

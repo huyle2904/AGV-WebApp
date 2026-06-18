@@ -1,0 +1,57 @@
+@inherits LayoutComponentBase
+@inject DemoRoleState RoleState
+
+<div class="page @(IsSidebarCollapsed ? "sidebar-collapsed" : null)">
+    <div class="sidebar">
+        <NavMenu IsCollapsed="IsSidebarCollapsed" OnCollapseChanged="SetSidebarCollapsed" />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <div class="topbar-brand">
+                <span class="topbar-title">SEER AGV Control</span>
+                <span class="topbar-subtitle">Single-site operations console</span>
+            </div>
+            <div class="topbar-actions">
+                <label class="role-switcher">
+                    <span>Role</span>
+                    <select value="@RoleState.CurrentRole" @onchange="OnRoleChanged">
+                        @foreach (var role in Enum.GetValues<UserRole>())
+                        {
+                            <option value="@role">@role</option>
+                        }
+                    </select>
+                </label>
+                <button type="button" class="user-avatar" title="Tài khoản operator" aria-label="Tài khoản operator"></button>
+            </div>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">x</a>
+</div>
+
+@code {
+    private bool IsSidebarCollapsed { get; set; }
+
+    private Task SetSidebarCollapsed(bool isCollapsed)
+    {
+        IsSidebarCollapsed = isCollapsed;
+        return Task.CompletedTask;
+    }
+
+    private void OnRoleChanged(ChangeEventArgs args)
+    {
+        if (Enum.TryParse<UserRole>(args.Value?.ToString(), out var role))
+        {
+            RoleState.SetRole(role);
+        }
+    }
+}

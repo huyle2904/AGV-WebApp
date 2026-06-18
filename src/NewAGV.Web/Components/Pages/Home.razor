@@ -1,0 +1,234 @@
+@page "/"
+@implements IDisposable
+@inject PlantStateService State
+
+<PageTitle>AGV Overview</PageTitle>
+
+<h1>Operations Overview</h1>
+<p class="page-intro">
+    Live SEER AGV state from the API, worker, and robot TCP connection.
+</p>
+
+@if (!State.IsInitialized)
+{
+    <p class="empty-state">Connecting to the AGV backend...</p>
+}
+else
+{
+    @if (State.Robots.Count == 0)
+    {
+        <section class="status-banner status-offline">
+            <div>
+                <strong>No AGV connection configured</strong>
+                <span>@State.Health.Message</span>
+            </div>
+            <span class="status-code">@State.Health.IntegrationStatus</span>
+        </section>
+    }
+
+    <section class="stats-grid">
+        <article class="stat-card">
+            <span class="stat-label">Robots online</span>
+            <strong class="stat-value">@State.Robots.Count(robot => robot.Connectivity == ConnectivityStatus.Online)</strong>
+            <span class="stat-foot">@State.Robots.Count total robots</span>
+        </article>
+        <article class="stat-card">
+            <span class="stat-label">Running missions</span>
+            <strong class="stat-value">@State.Robots.Count(robot => robot.Mode == RobotMode.Navigating)</strong>
+            <span class="stat-foot">Command center ready</span>
+        </article>
+        <article class="stat-card">
+            <span class="stat-label">Critical alarms</span>
+            <strong class="stat-value">@State.Robots.Count(robot => robot.AlarmState == AlarmSeverity.Critical)</strong>
+            <span class="stat-foot">Warnings: @State.Robots.Count(robot => robot.AlarmState == AlarmSeverity.Warning)</span>
+        </article>
+        <article class="stat-card">
+            <span class="stat-label">Integration status</span>
+            <strong class="stat-value">@State.Health.IntegrationStatus</strong>
+            <span class="stat-foot">@State.Health.Message</span>
+        </article>
+    </section>
+
+    <section class="panel-grid">
+        @if (PrimaryDetail is not null)
+        {
+            <article class="panel">
+                <div class="panel-header">
+                    <h2>Robot readiness</h2>
+                    <span class="pill">@PrimaryDetail.RobotId</span>
+                </div>
+
+                <div class="readiness-grid">
+                    <div class="readiness-item">
+                        <span>Map</span>
+                        <strong>@(PrimaryDetail.CurrentMap ?? "-")</strong>
+                    </div>
+                    <div class="readiness-item">
+                        <span>E-stop</span>
+                        <strong>@FormatEstop(PrimaryDetail)</strong>
+                    </div>
+                    <div class="readiness-item">
+                        <span>Localization</span>
+                        <strong>@PrimaryDetail.Localization?.StatusLabel</strong>
+                    </div>
+                    <div class="readiness-item">
+                        <span>Confidence</span>
+                        <strong>@FormatPercent(PrimaryDetail.Localization?.Confidence)</strong>
+                    </div>
+                    <div class="readiness-item">
+                        <span>Control owner</span>
+                        <strong>@FormatControlOwner(PrimaryDetail)</strong>
+                    </div>
+                    <div class="readiness-item">
+                        <span>Battery</span>
+                        <strong>@FormatPercent(PrimaryDetail.Battery?.BatteryLevel)</strong>
+                    </div>
+                </div>
+
+                @if (AlarmItems.Count == 0)
+                {
+                    <p class="inline-status">No active alarm details reported.</p>
+                }
+                else
+                {
+                    <div class="alarm-list">
+                        @foreach (var alarm in AlarmItems.Take(6))
+                        {
+                            <div class="alarm-row alarm-@alarm.SeverityClass">
+                                <span class="alarm-severity">@alarm.Severity</span>
+                                <strong>@alarm.Code</strong>
+                                <span>@(alarm.Description ?? alarm.Describe ?? "No description")</span>
+                                @if (!string.IsNullOrWhiteSpace(alarm.Method))
+                                {
+                                    <span>@alarm.Method</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </article>
+        }
+
+        <article class="panel">
+            <div class="panel-header">
+                <h2>Fleet</h2>
+                <span class="pill">@State.Robots.Count robots</span>
+            </div>
+
+            @if (State.Robots.Count == 0)
+            {
+                <div class="empty-panel">
+                    <strong>No robots discovered</strong>
+                    <span>Connect the SEER adapter before this table shows live AGV data.</span>
+                </div>
+            }
+            else
+            {
+                <div class="table-shell">
+                    <table class="app-table">
+                        <thead>
+                            <tr>
+                                <th>Robot</th>
+                                <th>Mode</th>
+                                <th>Battery</th>
+                                <th>Task</th>
+                                <th>Link</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var robot in State.Robots)
+                            {
+                                <tr>
+                                    <td>@robot.Name</td>
+                                    <td>@robot.Mode</td>
+                                    <td>@robot.BatteryPercent%</td>
+                                    <td>@(robot.CurrentTask ?? "Idle")</td>
+                                    <td>@robot.Connectivity</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </article>
+
+        <article class="panel">
+            <div class="panel-header">
+                <h2>Recent command log</h2>
+                <span class="pill">@State.AuditEntries.Count entries</span>
+            </div>
+
+            @if (State.AuditEntries.Count == 0)
+            {
+                <p class="empty-state">No commands have been dispatched yet.</p>
+            }
+            else
+            {
+                <div class="audit-feed">
+                    @foreach (var entry in State.AuditEntries.Take(6))
+                    {
+                        <div class="audit-item">
+                            <div class="audit-title">@entry.CommandType for @entry.RobotId</div>
+                            <div class="audit-meta">@entry.RequestedByRole / @entry.Status / @entry.OccurredAt.ToLocalTime().ToString("HH:mm:ss")</div>
+                            <div class="audit-message">@entry.Message</div>
+                        </div>
+                    }
+                </div>
+            }
+        </article>
+    </section>
+}
+
+@code {
+    private RobotTelemetryDetail? PrimaryDetail =>
+        State.Robots.Count == 0
+            ? null
+            : State.RobotDetails.GetValueOrDefault(State.Robots[0].RobotId);
+
+    private IReadOnlyList<AlarmDisplayItem> AlarmItems =>
+        PrimaryDetail?.Alarm is null
+            ? []
+            : PrimaryDetail.Alarm.Fatals.Select(item => AlarmDisplayItem.From("Fatal", "fatal", item))
+                .Concat(PrimaryDetail.Alarm.Errors.Select(item => AlarmDisplayItem.From("Error", "error", item)))
+                .Concat(PrimaryDetail.Alarm.Warnings.Select(item => AlarmDisplayItem.From("Warning", "warning", item)))
+                .Concat(PrimaryDetail.Alarm.Notices.Select(item => AlarmDisplayItem.From("Notice", "notice", item)))
+                .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += OnStateChanged;
+        await State.EnsureInitializedAsync();
+    }
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+    }
+
+    private static string FormatPercent(double? value)
+        => value is null ? "-" : $"{value.Value * 100:0.#}%";
+
+    private static string FormatEstop(RobotTelemetryDetail detail)
+        => detail.Estop?.Emergency == true || detail.Estop?.DriverEmergency == true || detail.Estop?.SoftEmergency == true
+            ? "Active"
+            : "Clear";
+
+    private static string FormatControlOwner(RobotTelemetryDetail detail)
+        => detail.ControlOwner?.Locked == true
+            ? detail.ControlOwner.NickName ?? detail.ControlOwner.Ip ?? "Locked"
+            : "Unlocked";
+
+    private sealed record AlarmDisplayItem(
+        string Severity,
+        string SeverityClass,
+        string Code,
+        string? Description,
+        string? Describe,
+        string? Method)
+    {
+        public static AlarmDisplayItem From(string severity, string severityClass, SeerAlarmItem item)
+            => new(severity, severityClass, item.Code, item.Description, item.Describe, item.Method);
+    }
+}

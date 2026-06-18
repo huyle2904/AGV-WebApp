@@ -1,0 +1,46 @@
+<div class="nav-brand">
+    <span class="nav-logo" aria-hidden="true"></span>
+    @if (!IsCollapsed)
+    {
+        <span class="nav-brand-text">NewAGV</span>
+    }
+</div>
+
+<button type="button" class="nav-collapse-btn @(IsCollapsed ? "collapsed" : "")" @onclick="Toggle" title="Toggle sidebar">
+    <span class="nav-collapse-icon" aria-hidden="true"></span>
+</button>
+
+<nav class="nav-menu">
+    <NavLink href="" Match="NavLinkMatch.All" class="@NavLinkClass">
+        <span class="nav-icon nav-icon-home" aria-hidden="true"></span>
+        @if (!IsCollapsed) { <span>Trang chủ</span> }
+    </NavLink>
+    <NavLink href="map" class="@NavLinkClass">
+        <span class="nav-icon nav-icon-map" aria-hidden="true"></span>
+        @if (!IsCollapsed) { <span>Giám sát</span> }
+    </NavLink>
+    <NavLink href="commands" class="@NavLinkClass">
+        <span class="nav-icon nav-icon-command" aria-hidden="true"></span>
+        @if (!IsCollapsed) { <span>Lệnh</span> }
+    </NavLink>
+    <NavLink href="configuration" class="@NavLinkClass">
+        <span class="nav-icon nav-icon-config" aria-hidden="true"></span>
+        @if (!IsCollapsed) { <span>Cấu hình</span> }
+    </NavLink>
+    <NavLink href="audit" class="@NavLinkClass">
+        <span class="nav-icon nav-icon-audit" aria-hidden="true"></span>
+        @if (!IsCollapsed) { <span>Nhật ký</span> }
+    </NavLink>
+</nav>
+
+@code {
+    [Parameter] public bool IsCollapsed { get; set; }
+    [Parameter] public EventCallback<bool> OnCollapseChanged { get; set; }
+
+    private string NavLinkClass => IsCollapsed ? "nav-link collapsed" : "nav-link";
+
+    private async Task Toggle()
+    {
+        await OnCollapseChanged.InvokeAsync(!IsCollapsed);
+    }
+}

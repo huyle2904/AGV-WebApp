@@ -1,0 +1,66 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<canvas id="@_canvasId" class="map-canvas" width="920" height="560"></canvas>
+
+@code {
+    [Parameter] public IReadOnlyList<MapEntity> Entities { get; set; } = [];
+    [Parameter] public IReadOnlyList<RobotSummary> Robots { get; set; } = [];
+    [Parameter] public bool ShowStations { get; set; } = true;
+    [Parameter] public bool ShowPaths { get; set; } = true;
+    [Parameter] public bool ShowZones { get; set; } = true;
+    [Parameter] public bool ShowLabels { get; set; } = true;
+    [Parameter] public double Zoom { get; set; } = 1;
+    [Parameter] public string? SelectedEntityId { get; set; }
+    [Parameter] public string? SelectedRobotId { get; set; }
+    [Parameter] public EventCallback<string> EntitySelected { get; set; }
+
+    private readonly string _canvasId = $"map-{Guid.NewGuid():N}";
+    private DotNetObjectReference<MapCanvas>? _selfReference;
+    private bool _renderPending = true;
+
+    protected override void OnParametersSet()
+    {
+        _renderPending = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender && !_renderPending)
+        {
+            return;
+        }
+
+        _selfReference ??= DotNetObjectReference.Create(this);
+
+        await JS.InvokeVoidAsync("agvMap.draw", _canvasId, new
+        {
+            entities = Entities,
+            robots = Robots,
+            showStations = ShowStations,
+            showPaths = ShowPaths,
+            showZones = ShowZones,
+            showLabels = ShowLabels,
+            zoom = Zoom,
+            selectedEntityId = SelectedEntityId,
+            selectedRobotId = SelectedRobotId
+        }, _selfReference);
+
+        _renderPending = false;
+    }
+
+    [JSInvokable]
+    public async Task SelectEntityFromCanvas(string entityId)
+    {
+        if (EntitySelected.HasDelegate)
+        {
+            await EntitySelected.InvokeAsync(entityId);
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _selfReference?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

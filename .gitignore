@@ -1,0 +1,27 @@
+## Build
+bin/
+obj/
+.run-build/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Logs
+*.log
+*.err.log
+
+## Visual Studio
+.vs/
+*.csproj.user
+
+## JetBrains Rider
+.idea/
+*.sln.iml
+
+## Node
+node_modules/
+
+## OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,309 @@
+@page "/commands"
+@implements IDisposable
+@inject PlantStateService State
+@inject AgvApiClient ApiClient
+@inject DemoRoleState RoleState
+
+<PageTitle>Command Center</PageTitle>
+
+<h1>Command Center</h1>
+<p class="page-intro">Send commands through the API and worker after the robot passes live safety checks.</p>
+
+@if (!State.IsInitialized)
+{
+    <p class="empty-state">Loading command context...</p>
+}
+else
+{
+    <section class="panel-grid">
+        <article class="panel">
+            <div class="panel-header">
+                <h2>Dispatch mission</h2>
+                <span class="pill">@RoleState.CurrentRole</span>
+            </div>
+
+            @if (State.Robots.Count == 0)
+            {
+                <div class="empty-panel">
+                    <strong>No robot available</strong>
+                    <span>Command dispatch is disabled until a real AGV source is connected.</span>
+                </div>
+            }
+            else
+            {
+                <EditForm Model="_request" OnValidSubmit="DispatchAsync" class="command-form">
+                    <label>
+                        <span>Robot</span>
+                        <select @bind="_request.RobotId">
+                            @foreach (var robot in State.Robots)
+                            {
+                                <option value="@robot.RobotId">@robot.Name (@robot.Mode)</option>
+                            }
+                        </select>
+                    </label>
+
+                    <label>
+                        <span>Command</span>
+                        <select @bind="_selectedCommand">
+                            @foreach (var commandType in Enum.GetValues<MissionCommandType>())
+                            {
+                                <option value="@commandType">@commandType</option>
+                            }
+                        </select>
+                    </label>
+
+                    @if (_selectedCommand is MissionCommandType.GoToStation)
+                    {
+                        <label>
+                            <span>Target station</span>
+                            <select @bind="_request.TargetEntityId">
+                                @foreach (var station in State.MapEntities.Where(entity => entity.Type == MapEntityType.Station))
+                                {
+                                    <option value="@station.EntityId">@station.Name (@station.EntityId)</option>
+                                }
+                            </select>
+                        </label>
+
+                        @if (!State.MapEntities.Any(entity => entity.Type == MapEntityType.Station))
+                        {
+                            <p class="inline-status">No target stations are configured yet.</p>
+                        }
+                    }
+
+                    @if (_selectedCommand == MissionCommandType.Teleop)
+                    {
+                        <div class="two-column">
+                            <label>
+                                <span>Velocity X</span>
+                                <input type="number" step="0.1" @bind="_velocityX" />
+                            </label>
+                            <label>
+                                <span>Velocity Y</span>
+                                <input type="number" step="0.1" @bind="_velocityY" />
+                            </label>
+                        </div>
+                    }
+
+                    <label class="checkbox-row">
+                        <input type="checkbox" @bind="_request.Confirmed" />
+                        <span>I confirm this command should be sent to the robot.</span>
+                    </label>
+
+                    @if (PreflightReasons.Count > 0)
+                    {
+                        <div class="preflight-panel">
+                            <strong>Command blocked</strong>
+                            @foreach (var reason in PreflightReasons)
+                            {
+                                <span>@reason</span>
+                            }
+                        </div>
+                    }
+                    else if (WarningReasons.Count > 0)
+                    {
+                        <div class="preflight-panel preflight-warning">
+                            <strong>Check before dispatch</strong>
+                            @foreach (var reason in WarningReasons)
+                            {
+                                <span>@reason</span>
+                            }
+                        </div>
+                    }
+
+                    <button class="primary-button" type="submit" disabled="@IsDispatchDisabled">Dispatch command</button>
+                </EditForm>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_statusMessage))
+            {
+                <p class="inline-status">@_statusMessage</p>
+            }
+        </article>
+
+        <article class="panel">
+            <div class="panel-header">
+                <h2>Current control policies</h2>
+            </div>
+            <div class="table-shell">
+                <table class="app-table">
+                    <thead>
+                        <tr>
+                            <th>Command</th>
+                            <th>Role</th>
+                            <th>Confirm</th>
+                            <th>Enabled</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var policy in State.Policies)
+                        {
+                            <tr>
+                                <td>@policy.CommandType</td>
+                                <td>@policy.MinimumRole</td>
+                                <td>@(policy.RequiresConfirmation ? "Yes" : "No")</td>
+                                <td>@(policy.Enabled ? "Yes" : "No")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </article>
+    </section>
+}
+
+@code {
+    private MissionCommandRequest _request = new("AGV-01", MissionCommandType.GoToStation, null, null, null, true);
+    private MissionCommandType _selectedCommand = MissionCommandType.GoToStation;
+    private double? _velocityX;
+    private double? _velocityY;
+    private string? _statusMessage;
+
+    private RobotSummary? SelectedRobot => State.Robots.FirstOrDefault(robot => robot.RobotId == _request.RobotId);
+
+    private RobotTelemetryDetail? SelectedRobotDetail =>
+        string.IsNullOrWhiteSpace(_request.RobotId)
+            ? null
+            : State.RobotDetails.GetValueOrDefault(_request.RobotId);
+
+    private bool IsDispatchDisabled =>
+        State.Robots.Count == 0 ||
+        (_selectedCommand is MissionCommandType.GoToStation &&
+         !State.MapEntities.Any(entity => entity.Type == MapEntityType.Station)) ||
+        PreflightReasons.Count > 0;
+
+    private IReadOnlyList<string> PreflightReasons => BuildPreflightReasons();
+
+    private IReadOnlyList<string> WarningReasons => BuildWarningReasons();
+
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += OnStateChanged;
+        await State.EnsureInitializedAsync();
+        if (State.Robots.Count > 0)
+        {
+            _request.RobotId = State.Robots[0].RobotId;
+        }
+
+        EnsureDefaultTarget();
+    }
+
+    private async Task DispatchAsync()
+    {
+        if (IsDispatchDisabled)
+        {
+            _statusMessage = PreflightReasons.Count == 0
+                ? "Command dispatch is disabled until robots and required map targets are configured."
+                : string.Join(" ", PreflightReasons);
+            return;
+        }
+
+        var request = _request with
+        {
+            CommandType = _selectedCommand,
+            VelocityX = _selectedCommand == MissionCommandType.Teleop ? _velocityX : null,
+            VelocityY = _selectedCommand == MissionCommandType.Teleop ? _velocityY : null,
+            TargetEntityId = _selectedCommand == MissionCommandType.ReturnToHome ? null : _request.TargetEntityId
+        };
+
+        var result = await ApiClient.DispatchAsync(request, RoleState.CurrentRole);
+        _statusMessage = result.Message;
+        await State.RefreshAuditAsync();
+    }
+
+    private IReadOnlyList<string> BuildPreflightReasons()
+    {
+        if (State.Robots.Count == 0)
+        {
+            return ["No robot is connected."];
+        }
+
+        var reasons = new List<string>();
+        var robot = SelectedRobot;
+        var detail = SelectedRobotDetail;
+
+        if (robot?.Connectivity != ConnectivityStatus.Online)
+        {
+            reasons.Add("Robot TCP link is not online.");
+        }
+
+        if (_selectedCommand is MissionCommandType.GoToStation &&
+            !State.MapEntities.Any(entity => entity.Type == MapEntityType.Station))
+        {
+            reasons.Add("No station has been loaded from the current map.");
+        }
+
+        if (IsMotionCommand(_selectedCommand))
+        {
+            if (detail?.Estop?.Emergency == true || detail?.Estop?.DriverEmergency == true || detail?.Estop?.SoftEmergency == true)
+            {
+                reasons.Add("E-stop or driver emergency is active.");
+            }
+
+            if (detail?.ControlOwner?.Locked == true)
+            {
+                var owner = detail.ControlOwner.NickName ?? detail.ControlOwner.Ip ?? "another controller";
+                reasons.Add($"Robot control is locked by {owner}.");
+            }
+
+            if (detail?.Alarm is { FatalCount: > 0 } or { ErrorCount: > 0 })
+            {
+                reasons.Add("Robot has active fatal/error alarms.");
+            }
+
+            if (detail?.Localization?.ReadyForNavigation != true)
+            {
+                reasons.Add($"Localization is not ready: {detail?.Localization?.StatusLabel ?? "unknown"}.");
+            }
+        }
+
+        return reasons;
+    }
+
+    private IReadOnlyList<string> BuildWarningReasons()
+    {
+        var detail = SelectedRobotDetail;
+        if (detail?.Alarm is null || detail.Alarm.WarningCount == 0)
+        {
+            return [];
+        }
+
+        return [$"Robot reports {detail.Alarm.WarningCount} active warning(s). Review readiness before moving."];
+    }
+
+    private static bool IsMotionCommand(MissionCommandType commandType)
+        => commandType is MissionCommandType.GoToStation
+            or MissionCommandType.ReturnToHome
+            or MissionCommandType.Resume
+            or MissionCommandType.Teleop;
+
+    private void EnsureDefaultTarget()
+    {
+        if (_selectedCommand is not MissionCommandType.GoToStation)
+        {
+            return;
+        }
+
+        var selectedStationExists = State.MapEntities.Any(entity =>
+            entity.Type == MapEntityType.Station &&
+            entity.EntityId == _request.TargetEntityId);
+
+        if (!selectedStationExists)
+        {
+            _request.TargetEntityId = State.MapEntities
+                .FirstOrDefault(entity => entity.Type == MapEntityType.Station)
+                ?.EntityId;
+        }
+    }
+
+    private void OnStateChanged()
+        => InvokeAsync(() =>
+        {
+            EnsureDefaultTarget();
+            StateHasChanged();
+        });
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+    }
+}
