@@ -42,4 +42,11 @@ public sealed class CommandsController(AgvPlantStore store, CommandDispatcher di
         var result = await workerClient.RelocateAsync(request, cancellationToken);
         return result.Status == MissionCommandStatus.Rejected ? BadRequest(result) : Ok(result);
     }
+
+    [HttpPost("teleop")]
+    public async Task<ActionResult<MissionCommandResult>> Teleop([FromBody] TeleopRequest request, CancellationToken cancellationToken)
+    {
+        var result = await workerClient.TeleopDriveAsync(request, cancellationToken);
+        return result.Status == MissionCommandStatus.Rejected ? BadRequest(result) : Ok(result);
+    }
 }

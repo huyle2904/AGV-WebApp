@@ -31,4 +31,13 @@ app.MapPost("/internal/commands/relocate", async (
     return Results.Json(result);
 });
 
+app.MapPost("/internal/commands/teleop", async (
+    TeleopRequest request,
+    SeerCommandService commandService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await commandService.TeleopDriveAsync(request, cancellationToken);
+    return Results.Json(result);
+});
+
 app.Run();

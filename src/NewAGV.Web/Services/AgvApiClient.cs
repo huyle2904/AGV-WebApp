@@ -62,6 +62,23 @@ public sealed class AgvApiClient(HttpClient httpClient)
             DateTimeOffset.UtcNow);
     }
 
+    public async Task<MissionCommandResult> TeleopDriveAsync(TeleopRequest request, UserRole role, CancellationToken cancellationToken = default)
+    {
+        using var message = CreateRequest(HttpMethod.Post, "api/commands/teleop", role);
+        message.Content = JsonContent.Create(request);
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<MissionCommandResult>(cancellationToken: cancellationToken);
+
+        return result ?? new MissionCommandResult(
+            Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
+            string.Empty,
+            MissionCommandType.Teleop,
+            MissionCommandStatus.Rejected,
+            "Backend did not return a response.",
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+    }
+
     public async Task<MapEntity> UpsertMapEntityAsync(MapEntity entity, UserRole role, CancellationToken cancellationToken = default)
     {
         using var message = CreateRequest(HttpMethod.Post, "api/map/entities", role);

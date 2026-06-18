@@ -22,7 +22,7 @@ public sealed class SeerCommandService(SeerTcpClient tcpClient, IOptions<SeerRob
                 MissionCommandType.Pause => await tcpClient.SendAsync(options.Value.NavigationPort, 3001, null, cancellationToken),
                 MissionCommandType.Resume => await tcpClient.SendAsync(options.Value.NavigationPort, 3002, null, cancellationToken),
                 MissionCommandType.Cancel => await tcpClient.SendAsync(options.Value.NavigationPort, 3003, null, cancellationToken),
-                MissionCommandType.Teleop => throw new InvalidOperationException("Teleop is disabled for phase 1."),
+                MissionCommandType.Teleop => await SendTeleopAsync(request, cancellationToken),
                 _ => throw new InvalidOperationException($"Unsupported command type {request.CommandType}.")
             };
 
@@ -102,6 +102,70 @@ public sealed class SeerCommandService(SeerTcpClient tcpClient, IOptions<SeerRob
                 ["source_id"] = "SELF_POSITION",
                 ["id"] = request.TargetEntityId,
                 ["task_id"] = Guid.NewGuid().ToString("N")
+            },
+            cancellationToken);
+    }
+
+    public async Task<MissionCommandResult> TeleopDriveAsync(
+        TeleopRequest request,
+        CancellationToken cancellationToken)
+    {
+        var requestedAt = DateTimeOffset.UtcNow;
+        var commandId = Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
+
+        try
+        {
+            var response = await tcpClient.SendAsync(
+                options.Value.ControlPort,
+                2010,
+                new Dictionary<string, object?>
+                {
+                    ["velocity_x"] = request.VelocityX,
+                    ["velocity_y"] = request.VelocityY,
+                    ["angular_velocity"] = request.AngularVelocity
+                },
+                cancellationToken);
+
+            var retCode = response.IntValue("ret_code") ?? 0;
+            return new MissionCommandResult(
+                commandId,
+                options.Value.RobotIdFallback,
+                MissionCommandType.Teleop,
+                retCode == 0 ? MissionCommandStatus.Accepted : MissionCommandStatus.Rejected,
+                retCode == 0
+                    ? $"Teleop velocity vx={request.VelocityX}, vy={request.VelocityY}, az={request.AngularVelocity} accepted."
+                    : $"Teleop rejected. ret_code={retCode}. {response.StringValue("err_msg")}",
+                requestedAt,
+                DateTimeOffset.UtcNow);
+        }
+        catch (Exception exception)
+        {
+            return new MissionCommandResult(
+                commandId,
+                options.Value.RobotIdFallback,
+                MissionCommandType.Teleop,
+                MissionCommandStatus.Rejected,
+                $"Teleop failed: {exception.Message}",
+                requestedAt,
+                DateTimeOffset.UtcNow);
+        }
+    }
+
+    private Task<System.Text.Json.Nodes.JsonObject> SendTeleopAsync(
+        MissionCommandRequest request,
+        CancellationToken cancellationToken)
+    {
+        var vx = request.VelocityX ?? 0;
+        var vy = request.VelocityY ?? 0;
+
+        return tcpClient.SendAsync(
+            options.Value.ControlPort,
+            2010,
+            new Dictionary<string, object?>
+            {
+                ["velocity_x"] = vx,
+                ["velocity_y"] = vy,
+                ["angular_velocity"] = 0
             },
             cancellationToken);
     }

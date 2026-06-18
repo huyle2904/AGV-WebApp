@@ -3,6 +3,7 @@
 @inject PlantStateService State
 @inject AgvApiClient ApiClient
 @inject DemoRoleState RoleState
+@inject IJSRuntime JS
 
 <PageTitle>AGV Monitor</PageTitle>
 
@@ -223,6 +224,47 @@
                     }
                     else
                     {
+                        <div class="teleop-panel">
+                            <div class="teleop-header">
+                                <strong>Teleop (WASD)</strong>
+                                <span class="pill @(_teleopActive ? "pill-active" : "pill-inactive")">
+                                    @(_teleopActive ? "Đang bật" : "Tắt")
+                                </span>
+                            </div>
+
+                            <div class="wasd-grid">
+                                <button type="button" class="wasd-btn" disabled="@(!_teleopActive)">Q</button>
+                                <button type="button" class="wasd-btn wasd-w" disabled="@(!_teleopActive)">W</button>
+                                <button type="button" class="wasd-btn" disabled="@(!_teleopActive)">E</button>
+                                <button type="button" class="wasd-btn wasd-a" disabled="@(!_teleopActive)">A</button>
+                                <button type="button" class="wasd-btn wasd-s" disabled="@(!_teleopActive)">S</button>
+                                <button type="button" class="wasd-btn wasd-d" disabled="@(!_teleopActive)">D</button>
+                            </div>
+                            <div class="teleop-controls">
+                                <label class="teleop-speed">
+                                    <span>Tốc độ: @_teleopSpeed.ToString("0.0")</span>
+                                    <input type="range" min="0.1" max="1.0" step="0.1" @bind="_teleopSpeed" />
+                                </label>
+                                <div class="teleop-actions">
+                                    <button type="button" class="primary-button teleop-toggle" @onclick="ToggleTeleop">
+                                        @(_teleopActive ? "Tắt Teleop" : "Bật Teleop")
+                                    </button>
+                                    <button type="button" class="danger-button teleop-estop" @onclick="EmergencyStop" disabled="@(!_teleopActive)">
+                                        E-STOP
+                                    </button>
+                                </div>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_teleopStatusMessage))
+                            {
+                                <p class="inline-status">@_teleopStatusMessage</p>
+                            }
+                            <p class="helper-text @(_teleopActive ? "text-warn" : "")">
+                                @(_teleopActive
+                                    ? "WASD di chuyển, Q/E sang ngang, Space = dừng khẩn"
+                                    : "Bật Teleop để điều khiển robot bằng bàn phím")
+                            </p>
+                        </div>
+
                         <div class="relocate-panel">
                             <strong>Relocation</strong>
                             @if (SelectedRobot is not null)
@@ -361,6 +403,14 @@
     private double _relocateAngle;
     private string? _relocateStatusMessage;
     private string? _selectedStationId;
+    private bool _teleopActive;
+    private double _teleopSpeed = 0.3;
+    private double _teleopVx;
+    private double _teleopVy;
+    private double _teleopAz;
+    private string? _teleopStatusMessage;
+    private Timer? _teleopTimer;
+    private DotNetObjectReference<Map>? _dotNetRef;
 
     private RobotSummary? SelectedRobot => State.Robots.FirstOrDefault(robot => robot.RobotId == _selectedRobotId) ?? State.Robots.FirstOrDefault();
 
@@ -497,6 +547,72 @@
         _relocateStatusMessage = result.Message;
     }
 
+    private async Task ToggleTeleop()
+    {
+        _teleopActive = !_teleopActive;
+        if (_teleopActive)
+        {
+            _teleopStatusMessage = "Đã bật teleop. Dùng WASD để điều khiển.";
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("teleop.start", _dotNetRef);
+        }
+        else
+        {
+            await StopTeleopAsync();
+        }
+    }
+
+    private async Task EmergencyStop()
+    {
+        await StopTeleopAsync();
+        _teleopStatusMessage = "E-STOP đã kích hoạt. Robot đã dừng.";
+    }
+
+    private async Task StopTeleopAsync()
+    {
+        _teleopActive = false;
+        _teleopTimer?.Dispose();
+        _teleopTimer = null;
+        await JS.InvokeVoidAsync("teleop.stop");
+        _dotNetRef?.Dispose();
+        _dotNetRef = null;
+        await SendTeleopCommand(0, 0, 0);
+    }
+
+    [JSInvokable]
+    public async Task OnTeleopVelocity(double vx, double vy, double az)
+    {
+        _teleopVx = vx * _teleopSpeed;
+        _teleopVy = vy * _teleopSpeed;
+        _teleopAz = az * _teleopSpeed;
+
+        if (vx == 0 && vy == 0 && az == 0)
+        {
+            _teleopTimer?.Dispose();
+            _teleopTimer = null;
+            await SendTeleopCommand(0, 0, 0);
+        }
+        else if (_teleopTimer is null)
+        {
+            _teleopTimer = new Timer(async _ =>
+            {
+                await SendTeleopCommand(_teleopVx, _teleopVy, _teleopAz);
+            }, null, 0, 200);
+        }
+    }
+
+    private async Task SendTeleopCommand(double vx, double vy, double az)
+    {
+        try
+        {
+            var request = new TeleopRequest(vx, vy, az);
+            await ApiClient.TeleopDriveAsync(request, RoleState.CurrentRole);
+        }
+        catch
+        {
+        }
+    }
+
     private void SelectRobot(string robotId)
     {
         _selectedRobotId = robotId;
@@ -589,6 +705,8 @@
     public void Dispose()
     {
         State.Changed -= OnStateChanged;
+        _teleopTimer?.Dispose();
+        _dotNetRef?.Dispose();
     }
 
     private static string GetProperty(MapEntity entity, string key)

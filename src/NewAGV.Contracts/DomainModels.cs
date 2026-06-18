@@ -282,6 +282,8 @@ public record GatewayHealth(
 
 public record SeerRelocationRequest(double X, double Y, double Angle);
 
+public record TeleopRequest(double VelocityX, double VelocityY, double AngularVelocity);
+
 public record RealtimeEvent(
     string EventType,
     DateTimeOffset OccurredAt,

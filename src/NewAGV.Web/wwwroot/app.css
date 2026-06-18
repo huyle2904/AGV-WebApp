@@ -210,6 +210,110 @@ html, body {
     font-weight: 700;
 }
 
+/* Teleop panel */
+.teleop-panel {
+    display: grid;
+    gap: 0.6rem;
+    border: 1px solid #d9e2ec;
+    border-radius: 10px;
+    padding: 0.85rem;
+    margin-bottom: 0.9rem;
+    background: #fbfdff;
+}
+
+.teleop-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.teleop-header > strong {
+    color: #111827;
+    font-size: 0.95rem;
+}
+
+.pill-active {
+    background: #dcfce7;
+    color: #16a34a;
+}
+
+.pill-inactive {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.wasd-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.3rem;
+    max-width: 160px;
+    margin: 0 auto;
+}
+
+.wasd-btn {
+    width: 100%;
+    aspect-ratio: 1;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    text-transform: uppercase;
+}
+
+.wasd-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.wasd-w { grid-column: 2; }
+.wasd-a { grid-column: 1; grid-row: 2; }
+.wasd-s { grid-column: 2; grid-row: 2; }
+.wasd-d { grid-column: 3; grid-row: 2; }
+
+.teleop-controls {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.teleop-speed {
+    display: grid;
+    gap: 0.2rem;
+    font-size: 0.82rem;
+    color: #475569;
+}
+
+.teleop-speed input[type="range"] {
+    width: 100%;
+    margin: 0;
+}
+
+.teleop-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+
+.teleop-toggle {
+    font-size: 0.82rem;
+    padding: 0.5rem;
+    min-height: 2.15rem;
+}
+
+.teleop-estop {
+    font-size: 0.82rem;
+    padding: 0.5rem;
+    min-height: 2.15rem;
+    font-weight: 800;
+}
+
+.text-warn {
+    color: #dc2626 !important;
+    font-weight: 600;
+}
+
 @media (max-width: 640px) {
     .relocate-inputs {
         grid-template-columns: 1fr;
