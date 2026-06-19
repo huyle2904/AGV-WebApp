@@ -23,7 +23,7 @@ else
                 <table class="app-table">
                     <thead>
                         <tr>
-                            <th>Command</th>
+                            <th>Operation</th>
                             <th>Minimum role</th>
                             <th>Confirm</th>
                             <th>Description</th>
@@ -55,7 +55,7 @@ else
                         <tr>
                             <th>Time</th>
                             <th>Robot</th>
-                            <th>Command</th>
+                            <th>Operation</th>
                             <th>Role</th>
                             <th>Status</th>
                             <th>Message</th>
@@ -67,7 +67,7 @@ else
                             <tr>
                                 <td>@entry.OccurredAt.ToLocalTime().ToString("HH:mm:ss")</td>
                                 <td>@entry.RobotId</td>
-                                <td>@entry.CommandType</td>
+                                <td>@entry.DisplayOperation</td>
                                 <td>@entry.RequestedByRole</td>
                                 <td>@entry.Status</td>
                                 <td>@entry.Message</td>
@@ -94,3 +94,4 @@ else
         State.Changed -= OnStateChanged;
     }
 }
+

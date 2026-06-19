@@ -28,6 +28,15 @@ public sealed class AgvApiClient(HttpClient httpClient)
     public async Task<IReadOnlyList<MissionAuditEntry>> GetAuditsAsync(CancellationToken cancellationToken = default)
         => await httpClient.GetFromJsonAsync<List<MissionAuditEntry>>("api/audit", cancellationToken) ?? [];
 
+    public async Task<IReadOnlyList<SeerTaskChainSummary>> GetTaskChainsAsync(CancellationToken cancellationToken = default)
+        => await httpClient.GetFromJsonAsync<List<SeerTaskChainSummary>>("api/taskchains", cancellationToken) ?? [];
+
+    public async Task<SeerTaskChainStatus?> GetTaskChainAsync(string taskChainName, CancellationToken cancellationToken = default)
+        => await httpClient.GetFromJsonAsync<SeerTaskChainStatus>($"api/taskchains/{Uri.EscapeDataString(taskChainName)}", cancellationToken);
+
+    public async Task<TaskChainRunSnapshot?> GetActiveTaskChainRunAsync(CancellationToken cancellationToken = default)
+        => await httpClient.GetFromJsonAsync<TaskChainRunSnapshot>("api/taskchains/active-run", cancellationToken);
+
     public async Task<MissionCommandResult> DispatchAsync(MissionCommandRequest request, UserRole role, CancellationToken cancellationToken = default)
     {
         using var message = CreateRequest(HttpMethod.Post, "api/commands/dispatch", role);
@@ -79,6 +88,33 @@ public sealed class AgvApiClient(HttpClient httpClient)
             DateTimeOffset.UtcNow);
     }
 
+    public async Task<TaskChainRunResult> ExecuteTaskChainAsync(TaskChainRunRequest request, UserRole role, CancellationToken cancellationToken = default)
+    {
+        using var message = CreateRequest(HttpMethod.Post, "api/taskchains/execute", role);
+        message.Content = JsonContent.Create(request);
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<TaskChainRunResult>(cancellationToken: cancellationToken);
+
+        return result ?? new TaskChainRunResult(
+            Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
+            request.RobotId,
+            request.TaskChainName,
+            TaskChainRunStatus.Rejected,
+            "Backend did not return a task chain response.",
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            null);
+    }
+
+    public Task<MissionCommandResult> PauseTaskChainAsync(UserRole role, CancellationToken cancellationToken = default)
+        => SendTaskChainControlAsync("api/taskchains/pause", MissionCommandType.Pause, role, cancellationToken);
+
+    public Task<MissionCommandResult> ResumeTaskChainAsync(UserRole role, CancellationToken cancellationToken = default)
+        => SendTaskChainControlAsync("api/taskchains/resume", MissionCommandType.Resume, role, cancellationToken);
+
+    public Task<MissionCommandResult> CancelTaskChainAsync(UserRole role, CancellationToken cancellationToken = default)
+        => SendTaskChainControlAsync("api/taskchains/cancel", MissionCommandType.Cancel, role, cancellationToken);
+
     public async Task<MapEntity> UpsertMapEntityAsync(MapEntity entity, UserRole role, CancellationToken cancellationToken = default)
     {
         using var message = CreateRequest(HttpMethod.Post, "api/map/entities", role);
@@ -93,6 +129,27 @@ public sealed class AgvApiClient(HttpClient httpClient)
         using var message = CreateRequest(HttpMethod.Delete, $"api/map/entities/{entityId}", role);
         using var response = await httpClient.SendAsync(message, cancellationToken);
         response.EnsureSuccessStatusCode();
+    }
+
+    private async Task<MissionCommandResult> SendTaskChainControlAsync(
+        string uri,
+        MissionCommandType commandType,
+        UserRole role,
+        CancellationToken cancellationToken)
+    {
+        using var message = CreateRequest(HttpMethod.Post, uri, role);
+        message.Content = JsonContent.Create(new { });
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<MissionCommandResult>(cancellationToken: cancellationToken);
+
+        return result ?? new MissionCommandResult(
+            Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
+            string.Empty,
+            commandType,
+            MissionCommandStatus.Rejected,
+            "Backend did not return a control response.",
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
     }
 
     private static HttpRequestMessage CreateRequest(HttpMethod method, string uri, UserRole role)

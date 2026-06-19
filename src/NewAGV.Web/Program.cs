@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.Configure<ApiOptions>(builder.Configuration.GetSection(ApiOptions.SectionName));
+builder.Services.Configure<MapBackgroundOptions>(builder.Configuration.GetSection(MapBackgroundOptions.SectionName));
 builder.Services.AddHttpClient<AgvApiClient>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<ApiOptions>>().Value;
@@ -15,6 +16,7 @@ builder.Services.AddHttpClient<AgvApiClient>((serviceProvider, client) =>
 builder.Services.AddScoped<DemoRoleState>();
 builder.Services.AddScoped<TelemetryClientService>();
 builder.Services.AddScoped<PlantStateService>();
+builder.Services.AddSingleton<MapBackgroundService>();
 
 var app = builder.Build();
 
@@ -38,3 +40,4 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+

@@ -168,7 +168,7 @@ else
                     @foreach (var entry in State.AuditEntries.Take(6))
                     {
                         <div class="audit-item">
-                            <div class="audit-title">@entry.CommandType for @entry.RobotId</div>
+                            <div class="audit-title">@entry.DisplayOperation for @entry.RobotId</div>
                             <div class="audit-meta">@entry.RequestedByRole / @entry.Status / @entry.OccurredAt.ToLocalTime().ToString("HH:mm:ss")</div>
                             <div class="audit-message">@entry.Message</div>
                         </div>
@@ -232,3 +232,4 @@ else
             => new(severity, severityClass, item.Code, item.Description, item.Describe, item.Method);
     }
 }
+

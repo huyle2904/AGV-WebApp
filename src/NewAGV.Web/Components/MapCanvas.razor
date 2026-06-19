@@ -1,9 +1,10 @@
-@implements IAsyncDisposable
+﻿@implements IAsyncDisposable
 @inject IJSRuntime JS
 
 <canvas id="@_canvasId" class="map-canvas" width="920" height="560"></canvas>
 
 @code {
+    [Parameter] public MapBackgroundDefinition? BackgroundMap { get; set; }
     [Parameter] public IReadOnlyList<MapEntity> Entities { get; set; } = [];
     [Parameter] public IReadOnlyList<RobotSummary> Robots { get; set; } = [];
     [Parameter] public bool ShowStations { get; set; } = true;
@@ -35,6 +36,7 @@
 
         await JS.InvokeVoidAsync("agvMap.draw", _canvasId, new
         {
+            backgroundMap = BackgroundMap,
             entities = Entities,
             robots = Robots,
             showStations = ShowStations,

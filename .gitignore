@@ -10,6 +10,9 @@ obj/
 ## Logs
 *.log
 *.err.log
+artifacts/
+logs/
+*.binlog
 
 ## Visual Studio
 .vs/

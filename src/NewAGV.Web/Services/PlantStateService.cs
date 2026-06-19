@@ -14,6 +14,8 @@ public sealed class PlantStateService(
     public List<MapEntity> MapEntities { get; } = [];
     public List<MissionAuditEntry> AuditEntries { get; } = [];
     public List<ControlPolicy> Policies { get; } = [];
+    public List<SeerTaskChainSummary> TaskChains { get; } = [];
+    public TaskChainRunSnapshot? ActiveTaskChainRun { get; private set; }
     public SiteHealth Health { get; private set; } = new(false, false, ConnectivityStatus.Offline, "Waiting for API.", 0, DateTimeOffset.UtcNow);
     public bool IsInitialized { get; private set; }
 
@@ -46,6 +48,8 @@ public sealed class PlantStateService(
         await RefreshMapAsync(cancellationToken);
         await RefreshAuditAsync(cancellationToken);
         await RefreshPoliciesAsync(cancellationToken);
+        await RefreshTaskChainsAsync(cancellationToken);
+        await RefreshActiveTaskChainRunAsync(cancellationToken);
         Health = await apiClient.GetHealthAsync(cancellationToken);
         Changed?.Invoke();
     }
@@ -86,6 +90,15 @@ public sealed class PlantStateService(
     public async Task RefreshPoliciesAsync(CancellationToken cancellationToken = default)
         => ReplaceWith(Policies, await apiClient.GetPoliciesAsync(cancellationToken), policy => policy.CommandType);
 
+    public async Task RefreshTaskChainsAsync(CancellationToken cancellationToken = default)
+        => ReplaceWith(TaskChains, await apiClient.GetTaskChainsAsync(cancellationToken), chain => chain.Name);
+
+    public async Task RefreshActiveTaskChainRunAsync(CancellationToken cancellationToken = default)
+    {
+        ActiveTaskChainRun = await apiClient.GetActiveTaskChainRunAsync(cancellationToken);
+        Changed?.Invoke();
+    }
+
     private void ApplyTelemetry(RealtimeEvent telemetry)
     {
         switch (telemetry.EventType)
@@ -104,6 +117,17 @@ public sealed class PlantStateService(
                 UpsertMapEntity(telemetry.MapEntity);
                 break;
             case "command.ack":
+                _ = RefreshAuditSafelyAsync();
+                break;
+            case var eventType when eventType.StartsWith("taskchain.", StringComparison.OrdinalIgnoreCase):
+                if (telemetry.TaskChainRun is not null)
+                {
+                    ActiveTaskChainRun = telemetry.TaskChainRun.Run.Status is TaskChainRunStatus.Completed or TaskChainRunStatus.Failed or TaskChainRunStatus.Canceled or TaskChainRunStatus.OverTime
+                        ? null
+                        : telemetry.TaskChainRun;
+                    UpsertTaskChainSummary(telemetry.TaskChainRun);
+                }
+
                 _ = RefreshAuditSafelyAsync();
                 break;
         }
@@ -146,6 +170,24 @@ public sealed class PlantStateService(
         else
         {
             MapEntities.Add(entity);
+        }
+    }
+
+    private void UpsertTaskChainSummary(TaskChainRunSnapshot snapshot)
+    {
+        var index = TaskChains.FindIndex(item => string.Equals(item.Name, snapshot.Run.TaskChainName, StringComparison.OrdinalIgnoreCase));
+        var next = new SeerTaskChainSummary(
+            snapshot.Run.TaskChainName,
+            index >= 0 ? TaskChains[index].CreatedOn : null,
+            snapshot.TaskChainStatus?.TaskListStatus);
+
+        if (index >= 0)
+        {
+            TaskChains[index] = next;
+        }
+        else
+        {
+            TaskChains.Add(next);
         }
     }
 

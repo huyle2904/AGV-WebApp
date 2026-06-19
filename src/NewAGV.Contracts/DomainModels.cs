@@ -57,6 +57,33 @@ public enum MissionCommandStatus
     Rejected
 }
 
+public enum TaskChainStatus
+{
+    None = 0,
+    Waiting = 1,
+    Running = 2,
+    Suspended = 3,
+    Completed = 4,
+    Failed = 5,
+    Canceled = 6,
+    OverTime = 7,
+    NotFound = 404
+}
+
+public enum TaskChainRunStatus
+{
+    Accepted,
+    UnknownTaskId,
+    Waiting,
+    Running,
+    Suspended,
+    Completed,
+    Failed,
+    Canceled,
+    OverTime,
+    Rejected
+}
+
 public enum SeerTaskStatus
 {
     None = 0,
@@ -168,11 +195,15 @@ public record MissionCommandResult(
 public record MissionAuditEntry(
     string AuditId,
     string RobotId,
-    MissionCommandType CommandType,
+    MissionCommandType? CommandType,
     UserRole RequestedByRole,
     string Message,
     MissionCommandStatus Status,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    string? Operation = null)
+{
+    public string DisplayOperation => Operation ?? CommandType?.ToString() ?? "Unknown";
+}
 
 public record SeerBatteryDetail(
     double? BatteryLevel,
@@ -262,6 +293,55 @@ public record ControlPolicy(
     bool Enabled,
     string Description);
 
+public record SeerTaskChainSummary(
+    string Name,
+    DateTimeOffset? CreatedOn,
+    TaskChainStatus? LastKnownStatus);
+
+public record SeerTaskChainStatus(
+    string TaskListName,
+    TaskChainStatus TaskListStatus,
+    string? TaskId,
+    bool? Loop,
+    int? ActionGroupId,
+    IReadOnlyList<int> ActionIds,
+    int? BatteryPercent);
+
+public record SeerTaskRuntimeStatus(
+    string TaskId,
+    TaskChainStatus Status,
+    int? Type,
+    string? ClosestTarget,
+    string? SourceName,
+    string? TargetName,
+    double? Percentage,
+    double? Distance,
+    string? Info);
+
+public record TaskChainRunRequest
+{
+    public string RobotId { get; set; } = string.Empty;
+    public string TaskChainName { get; set; } = string.Empty;
+    public bool Confirmed { get; set; }
+}
+
+public record TaskChainRunResult(
+    string RunId,
+    string RobotId,
+    string TaskChainName,
+    TaskChainRunStatus Status,
+    string Message,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? CompletedAt,
+    string? TaskId);
+
+public record TaskChainRunSnapshot(
+    TaskChainRunResult Run,
+    SeerTaskChainStatus? TaskChainStatus,
+    SeerTaskRuntimeStatus? RuntimeStatus,
+    UserRole RequestedByRole,
+    DateTimeOffset LastUpdated);
+
 public record SiteHealth(
     bool ApiHealthy,
     bool WorkerHealthy,
@@ -290,6 +370,8 @@ public record RealtimeEvent(
     RobotSummary? Robot = null,
     RobotTelemetryDetail? Detail = null,
     MissionCommandResult? Command = null,
+    TaskChainRunSnapshot? TaskChainRun = null,
     MapEntity? MapEntity = null,
     SiteHealth? Health = null,
     string? Message = null);
+

@@ -1,37 +1,47 @@
-<div class="nav-brand">
-    <span class="nav-logo" aria-hidden="true"></span>
-    @if (!IsCollapsed)
-    {
-        <span class="nav-brand-text">NewAGV</span>
-    }
+<div class="nav-shell">
+    <div class="nav-brand">
+        <img class="nav-logo" src="idea-logo.png" alt="IDEA Group" />
+        @if (!IsCollapsed)
+        {
+            <span class="nav-brand-text">IDEA GROUP</span>
+        }
+    </div>
+
+    <nav class="nav-menu">
+        <NavLink href="" Match="NavLinkMatch.All" class="@NavLinkClass">
+            <span class="nav-icon nav-icon-home" aria-hidden="true"></span>
+            @if (!IsCollapsed) { <span>Trang chu</span> }
+        </NavLink>
+        <NavLink href="map" class="@NavLinkClass">
+            <span class="nav-icon nav-icon-map" aria-hidden="true"></span>
+            @if (!IsCollapsed) { <span>Giam sat</span> }
+        </NavLink>
+        <NavLink href="commands" class="@NavLinkClass">
+            <span class="nav-icon nav-icon-command" aria-hidden="true"></span>
+            @if (!IsCollapsed) { <span>Lenh</span> }
+        </NavLink>
+        <NavLink href="taskchains" class="@NavLinkClass">
+            <span class="nav-icon nav-icon-taskchain" aria-hidden="true"></span>
+            @if (!IsCollapsed) { <span>TaskChain</span> }
+        </NavLink>
+        <NavLink href="configuration" class="@NavLinkClass">
+            <span class="nav-icon nav-icon-config" aria-hidden="true"></span>
+            @if (!IsCollapsed) { <span>Cau hinh</span> }
+        </NavLink>
+        <NavLink href="audit" class="@NavLinkClass">
+            <span class="nav-icon nav-icon-audit" aria-hidden="true"></span>
+            @if (!IsCollapsed) { <span>Nhat ky</span> }
+        </NavLink>
+    </nav>
+
+    <button type="button" class="nav-collapse-btn @(IsCollapsed ? "collapsed" : "")" @onclick="Toggle" title="Thu gon sidebar">
+        <span class="nav-collapse-icon" aria-hidden="true"></span>
+        @if (!IsCollapsed)
+        {
+            <span>Thu gon</span>
+        }
+    </button>
 </div>
-
-<button type="button" class="nav-collapse-btn @(IsCollapsed ? "collapsed" : "")" @onclick="Toggle" title="Toggle sidebar">
-    <span class="nav-collapse-icon" aria-hidden="true"></span>
-</button>
-
-<nav class="nav-menu">
-    <NavLink href="" Match="NavLinkMatch.All" class="@NavLinkClass">
-        <span class="nav-icon nav-icon-home" aria-hidden="true"></span>
-        @if (!IsCollapsed) { <span>Trang chủ</span> }
-    </NavLink>
-    <NavLink href="map" class="@NavLinkClass">
-        <span class="nav-icon nav-icon-map" aria-hidden="true"></span>
-        @if (!IsCollapsed) { <span>Giám sát</span> }
-    </NavLink>
-    <NavLink href="commands" class="@NavLinkClass">
-        <span class="nav-icon nav-icon-command" aria-hidden="true"></span>
-        @if (!IsCollapsed) { <span>Lệnh</span> }
-    </NavLink>
-    <NavLink href="configuration" class="@NavLinkClass">
-        <span class="nav-icon nav-icon-config" aria-hidden="true"></span>
-        @if (!IsCollapsed) { <span>Cấu hình</span> }
-    </NavLink>
-    <NavLink href="audit" class="@NavLinkClass">
-        <span class="nav-icon nav-icon-audit" aria-hidden="true"></span>
-        @if (!IsCollapsed) { <span>Nhật ký</span> }
-    </NavLink>
-</nav>
 
 @code {
     [Parameter] public bool IsCollapsed { get; set; }

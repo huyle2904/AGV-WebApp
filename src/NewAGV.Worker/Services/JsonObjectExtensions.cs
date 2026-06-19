@@ -8,7 +8,7 @@ internal static class JsonObjectExtensions
         => json is not null &&
            json.TryGetPropertyValue(propertyName, out var value) &&
            value is not null
-            ? value.GetValue<string?>()
+            ? value.ToString()
             : null;
 
     public static double? DoubleValue(this JsonObject? json, string propertyName)
@@ -35,6 +35,14 @@ internal static class JsonObjectExtensions
             ? boolean
             : null;
 
+    public static DateTimeOffset? DateTimeOffsetValue(this JsonObject? json, string propertyName)
+        => json is not null &&
+           json.TryGetPropertyValue(propertyName, out var value) &&
+           value is not null &&
+           DateTimeOffset.TryParse(value.ToString(), out var timestamp)
+            ? timestamp
+            : null;
+
     public static JsonArray? ArrayValue(this JsonObject? json, string propertyName)
         => json is not null &&
            json.TryGetPropertyValue(propertyName, out var value)
@@ -56,9 +64,24 @@ internal static class JsonObjectExtensions
         }
 
         return array
-            .Select(item => item?.GetValue<string>())
+            .Select(item => item?.ToString())
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .Select(item => item!)
+            .ToList();
+    }
+
+    public static IReadOnlyList<int> IntArrayValue(this JsonObject? json, string propertyName)
+    {
+        var array = json.ArrayValue(propertyName);
+        if (array is null)
+        {
+            return [];
+        }
+
+        return array
+            .Select(item => int.TryParse(item?.ToString(), out var value) ? value : (int?)null)
+            .Where(item => item.HasValue)
+            .Select(item => item!.Value)
             .ToList();
     }
 }
