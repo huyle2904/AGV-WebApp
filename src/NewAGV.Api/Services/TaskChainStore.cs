@@ -10,6 +10,7 @@ public sealed class TaskChainStore
     private readonly List<TaskChainRunSnapshot> _recentRuns = [];
     private readonly object _catalogLock = new();
     private readonly object _historyLock = new();
+    private static readonly TimeSpan CompletedRunRetention = TimeSpan.FromSeconds(15);
 
     public IReadOnlyList<SeerTaskChainSummary> GetTaskChains()
     {
@@ -50,10 +51,22 @@ public sealed class TaskChainStore
     }
 
     public bool TryStartRun(TaskChainRunSnapshot snapshot)
-        => _activeRuns.TryAdd(snapshot.Run.RobotId, snapshot);
+    {
+        PurgeCompletedRuns();
+
+        if (_activeRuns.TryGetValue(snapshot.Run.RobotId, out var existing)
+            && IsTerminal(existing.Run.Status))
+        {
+            _activeRuns.TryRemove(snapshot.Run.RobotId, out _);
+        }
+
+        return _activeRuns.TryAdd(snapshot.Run.RobotId, snapshot);
+    }
 
     public TaskChainRunSnapshot? GetActiveRun(string? robotId = null)
     {
+        PurgeCompletedRuns();
+
         if (!string.IsNullOrWhiteSpace(robotId))
         {
             return _activeRuns.TryGetValue(robotId, out var snapshot) ? snapshot : null;
@@ -65,7 +78,10 @@ public sealed class TaskChainStore
     }
 
     public IReadOnlyList<TaskChainRunSnapshot> GetActiveRuns()
-        => _activeRuns.Values.OrderBy(item => item.Run.RobotId).ToList();
+    {
+        PurgeCompletedRuns();
+        return _activeRuns.Values.OrderBy(item => item.Run.RobotId).ToList();
+    }
 
     public void UpdateActiveRun(TaskChainRunSnapshot snapshot)
     {
@@ -75,8 +91,8 @@ public sealed class TaskChainStore
 
     public void CompleteRun(TaskChainRunSnapshot snapshot)
     {
-        _activeRuns.TryRemove(snapshot.Run.RobotId, out _);
-        UpdateTaskChainStatus(snapshot.Run.TaskChainName, snapshot.TaskChainStatus?.TaskListStatus);
+        _activeRuns[snapshot.Run.RobotId] = snapshot;
+        UpdateTaskChainStatus(snapshot.Run.TaskChainName, ResolveTerminalChainStatus(snapshot.Run.Status, snapshot.TaskChainStatus?.TaskListStatus));
 
         lock (_historyLock)
         {
@@ -88,11 +104,44 @@ public sealed class TaskChainStore
         }
     }
 
-    public IReadOnlyList<TaskChainRunSnapshot> GetRecentRuns()
+    public IReadOnlyList<TaskChainRunSnapshot> GetRecentRuns(string? robotId = null)
     {
         lock (_historyLock)
         {
-            return _recentRuns.OrderByDescending(item => item.LastUpdated).ToList();
+            return _recentRuns
+                .Where(item => string.IsNullOrWhiteSpace(robotId) || string.Equals(item.Run.RobotId, robotId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(item => item.LastUpdated)
+                .ToList();
         }
     }
+
+    private void PurgeCompletedRuns()
+    {
+        var cutoff = DateTimeOffset.UtcNow - CompletedRunRetention;
+        foreach (var kvp in _activeRuns)
+        {
+            if (kvp.Value.Run.CompletedAt is not null && kvp.Value.Run.CompletedAt < cutoff)
+            {
+                _activeRuns.TryRemove(kvp.Key, out _);
+            }
+        }
+    }
+
+    private static bool IsTerminal(TaskChainRunStatus status)
+        => status is TaskChainRunStatus.Completed
+            or TaskChainRunStatus.Failed
+            or TaskChainRunStatus.Canceled
+            or TaskChainRunStatus.OverTime
+            or TaskChainRunStatus.Rejected;
+
+    private static TaskChainStatus? ResolveTerminalChainStatus(TaskChainRunStatus runStatus, TaskChainStatus? fallback)
+        => runStatus switch
+        {
+            TaskChainRunStatus.Completed => TaskChainStatus.Completed,
+            TaskChainRunStatus.Failed => TaskChainStatus.Failed,
+            TaskChainRunStatus.Canceled => TaskChainStatus.Canceled,
+            TaskChainRunStatus.OverTime => TaskChainStatus.OverTime,
+            _ => fallback
+        };
 }
+

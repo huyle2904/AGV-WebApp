@@ -8,6 +8,7 @@ public sealed class PlantStateService(
     ILogger<PlantStateService> logger)
 {
     private bool _telemetryHooked;
+    private bool _taskChainsRefreshInFlight;
 
     public List<RobotSummary> Robots { get; } = [];
     public Dictionary<string, RobotTelemetryDetail> RobotDetails { get; } = [];
@@ -91,7 +92,10 @@ public sealed class PlantStateService(
         => ReplaceWith(Policies, await apiClient.GetPoliciesAsync(cancellationToken), policy => policy.CommandType);
 
     public async Task RefreshTaskChainsAsync(CancellationToken cancellationToken = default)
-        => ReplaceWith(TaskChains, await apiClient.GetTaskChainsAsync(cancellationToken), chain => chain.Name);
+    {
+        ReplaceWith(TaskChains, await apiClient.GetTaskChainsAsync(cancellationToken), chain => chain.Name);
+        Changed?.Invoke();
+    }
 
     public async Task RefreshActiveTaskChainRunAsync(CancellationToken cancellationToken = default)
     {
@@ -109,9 +113,18 @@ public sealed class PlantStateService(
                 {
                     RobotDetails[telemetry.Detail.RobotId] = telemetry.Detail;
                 }
+
+                if (TaskChains.Count == 0 && telemetry.Robot.Connectivity == ConnectivityStatus.Online)
+                {
+                    _ = RefreshTaskChainsWhenAvailableAsync();
+                }
                 break;
             case "health.updated" when telemetry.Health is not null:
                 Health = telemetry.Health;
+                if (TaskChains.Count == 0 && telemetry.Health.IntegrationStatus != ConnectivityStatus.Offline)
+                {
+                    _ = RefreshTaskChainsWhenAvailableAsync();
+                }
                 break;
             case "map.updated" when telemetry.MapEntity is not null:
                 UpsertMapEntity(telemetry.MapEntity);
@@ -122,9 +135,7 @@ public sealed class PlantStateService(
             case var eventType when eventType.StartsWith("taskchain.", StringComparison.OrdinalIgnoreCase):
                 if (telemetry.TaskChainRun is not null)
                 {
-                    ActiveTaskChainRun = telemetry.TaskChainRun.Run.Status is TaskChainRunStatus.Completed or TaskChainRunStatus.Failed or TaskChainRunStatus.Canceled or TaskChainRunStatus.OverTime
-                        ? null
-                        : telemetry.TaskChainRun;
+                    ActiveTaskChainRun = telemetry.TaskChainRun;
                     UpsertTaskChainSummary(telemetry.TaskChainRun);
                 }
 
@@ -144,6 +155,28 @@ public sealed class PlantStateService(
         catch (Exception exception)
         {
             logger.LogWarning(exception, "Failed to refresh audit log after telemetry event.");
+        }
+    }
+
+    private async Task RefreshTaskChainsWhenAvailableAsync()
+    {
+        if (_taskChainsRefreshInFlight)
+        {
+            return;
+        }
+
+        _taskChainsRefreshInFlight = true;
+        try
+        {
+            await RefreshTaskChainsAsync();
+        }
+        catch (HttpRequestException exception)
+        {
+            logger.LogWarning(exception, "Failed to refresh task chains after telemetry reconnect signal.");
+        }
+        finally
+        {
+            _taskChainsRefreshInFlight = false;
         }
     }
 
@@ -176,10 +209,18 @@ public sealed class PlantStateService(
     private void UpsertTaskChainSummary(TaskChainRunSnapshot snapshot)
     {
         var index = TaskChains.FindIndex(item => string.Equals(item.Name, snapshot.Run.TaskChainName, StringComparison.OrdinalIgnoreCase));
+        var status = snapshot.Run.Status switch
+        {
+            TaskChainRunStatus.Completed => TaskChainStatus.Completed,
+            TaskChainRunStatus.Failed => TaskChainStatus.Failed,
+            TaskChainRunStatus.Canceled => TaskChainStatus.Canceled,
+            TaskChainRunStatus.OverTime => TaskChainStatus.OverTime,
+            _ => snapshot.TaskChainStatus?.TaskListStatus
+        };
         var next = new SeerTaskChainSummary(
             snapshot.Run.TaskChainName,
             index >= 0 ? TaskChains[index].CreatedOn : null,
-            snapshot.TaskChainStatus?.TaskListStatus);
+            status);
 
         if (index >= 0)
         {

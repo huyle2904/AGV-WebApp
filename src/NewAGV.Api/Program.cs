@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using NewAGV.Api.Data;
 using NewAGV.Api.Hubs;
 using NewAGV.Api.Services;
 
@@ -8,12 +10,15 @@ builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddDbContext<NewAgvDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("NewAgvDb")));
 builder.Services.AddSingleton<AgvPlantStore>();
 builder.Services.AddSingleton<TaskChainStore>();
 builder.Services.AddSingleton<CommandDispatcher>();
 builder.Services.AddSingleton<TaskChainCoordinator>();
 builder.Services.AddHttpClient<AgvGatewayClient>();
 builder.Services.AddHttpClient<SeerWorkerClient>();
+builder.Services.AddHostedService<DatabaseInitializationService>();
 builder.Services.AddHostedService<TaskChainMonitorService>();
 
 if (builder.Configuration.GetValue<bool>("Integration:EnableSimulation"))

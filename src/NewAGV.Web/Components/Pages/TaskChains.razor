@@ -41,7 +41,7 @@ else
                 <EditForm Model="_request" OnValidSubmit="ExecuteAsync" class="command-form">
                     <label>
                         <span>Robot</span>
-                        <select @bind="_request.RobotId">
+                        <select value="@_request.RobotId" @onchange="OnRobotChanged">
                             @foreach (var robot in State.Robots)
                             {
                                 <option value="@robot.RobotId">@robot.Name (@robot.Mode)</option>
@@ -145,10 +145,10 @@ else
         <article class="panel">
             <div class="panel-header">
                 <h2>Active TaskChain Run</h2>
-                <span class="pill">@(State.ActiveTaskChainRun?.Run.Status.ToString() ?? "Idle")</span>
+                <span class="pill">@(_activeRun?.Run.Status.ToString() ?? "Idle")</span>
             </div>
 
-            @if (State.ActiveTaskChainRun is null)
+            @if (_activeRun is null)
             {
                 <div class="empty-panel">
                     <strong>No active TaskChain</strong>
@@ -160,47 +160,90 @@ else
                 <div class="taskchain-runtime-grid">
                     <div class="readiness-item">
                         <span>TaskChain</span>
-                        <strong>@State.ActiveTaskChainRun.Run.TaskChainName</strong>
+                        <strong>@_activeRun.Run.TaskChainName</strong>
                     </div>
                     <div class="readiness-item">
                         <span>Run status</span>
-                        <strong>@State.ActiveTaskChainRun.Run.Status</strong>
+                        <strong>@_activeRun.Run.Status</strong>
                     </div>
                     <div class="readiness-item">
                         <span>TaskList status</span>
-                        <strong>@(State.ActiveTaskChainRun.TaskChainStatus?.TaskListStatus.ToString() ?? "-")</strong>
+                        <strong>@(_activeRun.TaskChainStatus?.TaskListStatus.ToString() ?? "-")</strong>
                     </div>
                     <div class="readiness-item">
                         <span>Task ID</span>
-                        <strong>@(State.ActiveTaskChainRun.Run.TaskId ?? "-")</strong>
+                        <strong>@(_activeRun.Run.TaskId ?? "-")</strong>
                     </div>
                     <div class="readiness-item">
                         <span>Closest target</span>
-                        <strong>@(State.ActiveTaskChainRun.RuntimeStatus?.ClosestTarget ?? "-")</strong>
+                        <strong>@(_activeRun.RuntimeStatus?.ClosestTarget ?? "-")</strong>
                     </div>
                     <div class="readiness-item">
                         <span>Route</span>
-                        <strong>@FormatRoute(State.ActiveTaskChainRun.RuntimeStatus)</strong>
+                        <strong>@FormatRoute(_activeRun.RuntimeStatus)</strong>
                     </div>
                     <div class="readiness-item">
                         <span>Progress</span>
-                        <strong>@FormatProgress(State.ActiveTaskChainRun.RuntimeStatus)</strong>
+                        <strong>@FormatProgress(_activeRun.RuntimeStatus)</strong>
                     </div>
                     <div class="readiness-item">
                         <span>Distance</span>
-                        <strong>@FormatDistance(State.ActiveTaskChainRun.RuntimeStatus)</strong>
+                        <strong>@FormatDistance(_activeRun.RuntimeStatus)</strong>
                     </div>
                 </div>
 
-                <p class="inline-status taskchain-runtime-message">@(State.ActiveTaskChainRun.RuntimeStatus?.Info ?? State.ActiveTaskChainRun.Run.Message)</p>
+                <p class="inline-status taskchain-runtime-message">@(_activeRun.RuntimeStatus?.Info ?? _activeRun.Run.Message)</p>
+            }
+        </article>
+
+        <article class="panel">
+            <div class="panel-header">
+                <h2>Recent Runs</h2>
+                <span class="pill">@_recentRuns.Count items</span>
+            </div>
+
+            @if (_recentRuns.Count == 0)
+            {
+                <div class="empty-panel">
+                    <strong>No recent run</strong>
+                    <span>Completed, canceled, or failed TaskChain runs will appear here for the selected robot.</span>
+                </div>
+            }
+            else
+            {
+                <div class="table-shell">
+                    <table class="app-table">
+                        <thead>
+                            <tr>
+                                <th>TaskChain</th>
+                                <th>Status</th>
+                                <th>Task ID</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var snapshot in _recentRuns)
+                            {
+                                <tr>
+                                    <td>@snapshot.Run.TaskChainName</td>
+                                    <td>@snapshot.Run.Status</td>
+                                    <td>@(snapshot.Run.TaskId ?? "-")</td>
+                                    <td>@snapshot.LastUpdated.ToLocalTime().ToString("HH:mm:ss")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             }
         </article>
     </section>
 }
 
 @code {
-    private TaskChainRunRequest _request = new("AGV-01", string.Empty, true);
+    private TaskChainRunRequest _request = new() { RobotId = "AGV-01", TaskChainName = string.Empty, Confirmed = true };
     private SeerTaskChainStatus? SelectedTaskChainStatus;
+    private TaskChainRunSnapshot? _activeRun;
+    private List<TaskChainRunSnapshot> _recentRuns = [];
     private string? _statusMessage;
 
     private RobotSummary? SelectedRobot => State.Robots.FirstOrDefault(robot => robot.RobotId == _request.RobotId);
@@ -216,13 +259,13 @@ else
         string.IsNullOrWhiteSpace(_request.TaskChainName) ||
         !_request.Confirmed ||
         PreflightReasons.Count > 0 ||
-        State.ActiveTaskChainRun is not null;
+        (_activeRun is not null && !IsTerminal(_activeRun.Run.Status));
 
-    private bool CanPause => State.ActiveTaskChainRun?.Run.Status is TaskChainRunStatus.Accepted or TaskChainRunStatus.Waiting or TaskChainRunStatus.Running;
+    private bool CanPause => _activeRun?.Run.Status is TaskChainRunStatus.Accepted or TaskChainRunStatus.Waiting or TaskChainRunStatus.Running;
 
-    private bool CanResume => State.ActiveTaskChainRun?.Run.Status is TaskChainRunStatus.Suspended;
+    private bool CanResume => _activeRun?.Run.Status is TaskChainRunStatus.Suspended;
 
-    private bool CanCancel => State.ActiveTaskChainRun is not null;
+    private bool CanCancel => _activeRun is not null && !IsTerminal(_activeRun.Run.Status);
 
     private IReadOnlyList<string> PreflightReasons => BuildPreflightReasons();
 
@@ -234,39 +277,46 @@ else
         await State.EnsureInitializedAsync();
         EnsureDefaults();
         await LoadSelectedTaskChainAsync();
+        await RefreshRunDataAsync();
     }
 
     private async Task ExecuteAsync()
     {
         var result = await ApiClient.ExecuteTaskChainAsync(_request, RoleState.CurrentRole);
         _statusMessage = result.Message;
-        await State.RefreshActiveTaskChainRunAsync();
+        await RefreshRunDataAsync();
         await State.RefreshAuditAsync();
         await State.RefreshTaskChainsAsync();
     }
 
     private async Task PauseAsync()
     {
-        var result = await ApiClient.PauseTaskChainAsync(RoleState.CurrentRole);
+        var result = await ApiClient.PauseTaskChainAsync(_request.RobotId, RoleState.CurrentRole);
         _statusMessage = result.Message;
-        await State.RefreshActiveTaskChainRunAsync();
+        await RefreshRunDataAsync();
         await State.RefreshAuditAsync();
     }
 
     private async Task ResumeAsync()
     {
-        var result = await ApiClient.ResumeTaskChainAsync(RoleState.CurrentRole);
+        var result = await ApiClient.ResumeTaskChainAsync(_request.RobotId, RoleState.CurrentRole);
         _statusMessage = result.Message;
-        await State.RefreshActiveTaskChainRunAsync();
+        await RefreshRunDataAsync();
         await State.RefreshAuditAsync();
     }
 
     private async Task CancelAsync()
     {
-        var result = await ApiClient.CancelTaskChainAsync(RoleState.CurrentRole);
+        var result = await ApiClient.CancelTaskChainAsync(_request.RobotId, RoleState.CurrentRole);
         _statusMessage = result.Message;
-        await State.RefreshActiveTaskChainRunAsync();
+        await RefreshRunDataAsync();
         await State.RefreshAuditAsync();
+    }
+
+    private async Task OnRobotChanged(ChangeEventArgs args)
+    {
+        _request = _request with { RobotId = args.Value?.ToString() ?? string.Empty };
+        await RefreshRunDataAsync();
     }
 
     private async Task OnTaskChainChanged(ChangeEventArgs args)
@@ -298,6 +348,19 @@ else
             SelectedTaskChainStatus = null;
             _statusMessage = exception.Message;
         }
+    }
+
+    private async Task RefreshRunDataAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_request.RobotId))
+        {
+            _activeRun = null;
+            _recentRuns = [];
+            return;
+        }
+
+        _activeRun = await ApiClient.GetActiveTaskChainRunAsync(_request.RobotId);
+        _recentRuns = (await ApiClient.GetTaskChainHistoryAsync(_request.RobotId)).ToList();
     }
 
     private IReadOnlyList<string> BuildPreflightReasons()
@@ -343,7 +406,7 @@ else
             reasons.Add($"Localization is not ready: {detail.Localization?.StatusLabel ?? "unknown"}.");
         }
 
-        if (State.ActiveTaskChainRun is not null && State.ActiveTaskChainRun.Run.RobotId == _request.RobotId)
+        if (_activeRun is not null && !IsTerminal(_activeRun.Run.Status) && _activeRun.Run.RobotId == _request.RobotId)
         {
             reasons.Add("Another TaskChain is already active on this robot.");
         }
@@ -384,13 +447,52 @@ else
                 await LoadSelectedTaskChainAsync();
             }
 
+            if (State.ActiveTaskChainRun?.Run.RobotId == _request.RobotId)
+            {
+                _activeRun = State.ActiveTaskChainRun;
+                UpsertRecentRun(State.ActiveTaskChainRun);
+            }
+            else if (_activeRun is not null && IsTerminal(_activeRun.Run.Status))
+            {
+                UpsertRecentRun(_activeRun);
+            }
+
             StateHasChanged();
         });
+
+    private void UpsertRecentRun(TaskChainRunSnapshot? snapshot)
+    {
+        if (snapshot is null || snapshot.Run.RobotId != _request.RobotId || !IsTerminal(snapshot.Run.Status))
+        {
+            return;
+        }
+
+        var index = _recentRuns.FindIndex(item => item.Run.RunId == snapshot.Run.RunId);
+        if (index >= 0)
+        {
+            _recentRuns[index] = snapshot;
+        }
+        else
+        {
+            _recentRuns.Insert(0, snapshot);
+            if (_recentRuns.Count > 20)
+            {
+                _recentRuns.RemoveRange(20, _recentRuns.Count - 20);
+            }
+        }
+    }
 
     public void Dispose()
     {
         State.Changed -= OnStateChanged;
     }
+
+    private static bool IsTerminal(TaskChainRunStatus status)
+        => status is TaskChainRunStatus.Completed
+            or TaskChainRunStatus.Failed
+            or TaskChainRunStatus.Canceled
+            or TaskChainRunStatus.OverTime
+            or TaskChainRunStatus.Rejected;
 
     private static string FormatRoute(SeerTaskRuntimeStatus? runtime)
         => runtime is null

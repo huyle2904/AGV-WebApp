@@ -4,51 +4,78 @@ using NewAGV.Contracts;
 
 namespace NewAGV.Worker.Services;
 
-public sealed class SeerTaskChainService(SeerTcpClient tcpClient, IOptions<SeerRobotOptions> options)
+public sealed class SeerTaskChainService(
+    SeerTcpClient tcpClient,
+    IOptions<SeerRobotOptions> options,
+    ILogger<SeerTaskChainService> logger)
 {
     public async Task<IReadOnlyList<SeerTaskChainSummary>> GetTaskChainsAsync(CancellationToken cancellationToken)
     {
-        var response = await tcpClient.SendAsync(options.Value.NavigationPort, 3115, null, cancellationToken);
-        EnsureSuccess(response, "load task chains");
+        try
+        {
+            var response = await tcpClient.SendAsync(options.Value.NavigationPort, 3115, null, cancellationToken);
+            EnsureSuccess(response, "load task chains");
 
-        var createdOn = response.DateTimeOffsetValue("create_on");
-        return response.StringArrayValue("tasklists")
-            .Select(name => new SeerTaskChainSummary(name, createdOn, null))
-            .OrderBy(item => item.Name)
-            .ToList();
+            var createdOn = response.DateTimeOffsetValue("create_on");
+            return response.StringArrayValue("tasklists")
+                .Select(name => new SeerTaskChainSummary(name, createdOn, null))
+                .OrderBy(item => item.Name)
+                .ToList();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Failed to load task chains from SEER. Returning an empty catalog.");
+            return [];
+        }
     }
 
-    public async Task<SeerTaskChainStatus> GetTaskChainStatusAsync(string taskChainName, bool withRobotStatus, CancellationToken cancellationToken)
+    public async Task<SeerTaskChainStatus?> GetTaskChainStatusAsync(string taskChainName, bool withRobotStatus, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(taskChainName))
         {
             throw new InvalidOperationException("Task chain name is required.");
         }
 
-        var response = await tcpClient.SendAsync(
-            options.Value.NavigationPort,
-            3101,
-            new Dictionary<string, object?>
-            {
-                ["task_list_name"] = taskChainName,
-                ["with_robot_status"] = withRobotStatus
-            },
-            cancellationToken);
+        try
+        {
+            var response = await tcpClient.SendAsync(
+                options.Value.NavigationPort,
+                3101,
+                new Dictionary<string, object?>
+                {
+                    ["task_list_name"] = taskChainName,
+                    ["with_robot_status"] = withRobotStatus
+                },
+                cancellationToken);
 
-        EnsureSuccess(response, $"query task chain '{taskChainName}'");
+            EnsureSuccess(response, $"query task chain '{taskChainName}'");
 
-        var status = response.ObjectValue("tasklist_status")
-            ?? throw new InvalidOperationException($"SEER did not return task chain details for '{taskChainName}'.");
-        var robotStatus = response.ObjectValue("robot_status");
+            var status = response.ObjectValue("tasklist_status")
+                ?? throw new InvalidOperationException($"SEER did not return task chain details for '{taskChainName}'.");
+            var robotStatus = response.ObjectValue("robot_status");
 
-        return new SeerTaskChainStatus(
-            status.StringValue("taskListName") ?? taskChainName,
-            ToTaskChainStatus(status.IntValue("taskListStatus")),
-            NormalizeTaskId(status.StringValue("taskId")),
-            status.BoolValue("loop"),
-            status.IntValue("actionGroupId"),
-            status.IntArrayValue("actionIds"),
-            ResolveBatteryPercent(robotStatus));
+            return new SeerTaskChainStatus(
+                status.StringValue("taskListName") ?? taskChainName,
+                ToTaskChainStatus(status.IntValue("taskListStatus")),
+                NormalizeTaskId(status.StringValue("taskId")),
+                status.BoolValue("loop"),
+                status.IntValue("actionGroupId"),
+                status.IntArrayValue("actionIds"),
+                ResolveBatteryPercent(robotStatus));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Failed to query task chain status for {TaskChainName}. Returning no task chain status.", taskChainName);
+            return null;
+        }
     }
 
     public async Task<TaskChainRunResult> ExecuteTaskChainAsync(TaskChainRunRequest request, CancellationToken cancellationToken)
@@ -106,28 +133,40 @@ public sealed class SeerTaskChainService(SeerTcpClient tcpClient, IOptions<SeerR
             };
         }
 
-        var response = await tcpClient.SendAsync(options.Value.StatusPort, 1110, payload, cancellationToken);
-        EnsureSuccess(response, "query task runtime status");
-
-        var package = response.ObjectValue("task_status_package");
-        if (package is null)
+        try
         {
+            var response = await tcpClient.SendAsync(options.Value.StatusPort, 1110, payload, cancellationToken);
+            EnsureSuccess(response, "query task runtime status");
+
+            var package = response.ObjectValue("task_status_package");
+            if (package is null)
+            {
+                return [];
+            }
+
+            var closestTarget = package.StringValue("closest_target");
+            var sourceName = package.StringValue("source_name");
+            var targetName = package.StringValue("target_name");
+            var percentage = package.DoubleValue("percentage");
+            var distance = package.DoubleValue("distance");
+            var info = package.StringValue("info");
+
+            return package.ArrayValue("task_status_list")?
+                .OfType<JsonObject>()
+                .Select(item => ToRuntimeStatus(item, closestTarget, sourceName, targetName, percentage, distance, info))
+                .Where(item => item is not null)
+                .Select(item => item!)
+                .ToList() ?? [];
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Failed to query SEER task runtime status. Returning no runtime rows.");
             return [];
         }
-
-        var closestTarget = package.StringValue("closest_target");
-        var sourceName = package.StringValue("source_name");
-        var targetName = package.StringValue("target_name");
-        var percentage = package.DoubleValue("percentage");
-        var distance = package.DoubleValue("distance");
-        var info = package.StringValue("info");
-
-        return package.ArrayValue("task_status_list")?
-            .OfType<JsonObject>()
-            .Select(item => ToRuntimeStatus(item, closestTarget, sourceName, targetName, percentage, distance, info))
-            .Where(item => item is not null)
-            .Select(item => item!)
-            .ToList() ?? [];
     }
 
     public Task<MissionCommandResult> PauseAsync(CancellationToken cancellationToken)

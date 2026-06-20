@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using NewAGV.Contracts;
 
 namespace NewAGV.Web.Services;
@@ -34,8 +35,36 @@ public sealed class AgvApiClient(HttpClient httpClient)
     public async Task<SeerTaskChainStatus?> GetTaskChainAsync(string taskChainName, CancellationToken cancellationToken = default)
         => await httpClient.GetFromJsonAsync<SeerTaskChainStatus>($"api/taskchains/{Uri.EscapeDataString(taskChainName)}", cancellationToken);
 
-    public async Task<TaskChainRunSnapshot?> GetActiveTaskChainRunAsync(CancellationToken cancellationToken = default)
-        => await httpClient.GetFromJsonAsync<TaskChainRunSnapshot>("api/taskchains/active-run", cancellationToken);
+    public Task<TaskChainRunSnapshot?> GetActiveTaskChainRunAsync(CancellationToken cancellationToken = default)
+        => GetActiveTaskChainRunAsync(null, cancellationToken);
+
+    public async Task<TaskChainRunSnapshot?> GetActiveTaskChainRunAsync(string? robotId, CancellationToken cancellationToken = default)
+    {
+        var uri = string.IsNullOrWhiteSpace(robotId)
+            ? "api/taskchains/active-run"
+            : $"api/taskchains/active-run?robotId={Uri.EscapeDataString(robotId)}";
+        using var response = await httpClient.GetAsync(uri, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+        {
+            return null;
+        }
+
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<TaskChainRunSnapshot>(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    }
+
+    public async Task<IReadOnlyList<TaskChainRunSnapshot>> GetTaskChainHistoryAsync(string? robotId, CancellationToken cancellationToken = default)
+    {
+        var uri = string.IsNullOrWhiteSpace(robotId)
+            ? "api/taskchains/history"
+            : $"api/taskchains/history?robotId={Uri.EscapeDataString(robotId)}";
+        return await httpClient.GetFromJsonAsync<List<TaskChainRunSnapshot>>(uri, cancellationToken) ?? [];
+    }
 
     public async Task<MissionCommandResult> DispatchAsync(MissionCommandRequest request, UserRole role, CancellationToken cancellationToken = default)
     {
@@ -106,14 +135,14 @@ public sealed class AgvApiClient(HttpClient httpClient)
             null);
     }
 
-    public Task<MissionCommandResult> PauseTaskChainAsync(UserRole role, CancellationToken cancellationToken = default)
-        => SendTaskChainControlAsync("api/taskchains/pause", MissionCommandType.Pause, role, cancellationToken);
+    public Task<MissionCommandResult> PauseTaskChainAsync(string robotId, UserRole role, CancellationToken cancellationToken = default)
+        => SendTaskChainControlAsync("api/taskchains/pause", MissionCommandType.Pause, new TaskChainControlRequest { RobotId = robotId }, role, cancellationToken);
 
-    public Task<MissionCommandResult> ResumeTaskChainAsync(UserRole role, CancellationToken cancellationToken = default)
-        => SendTaskChainControlAsync("api/taskchains/resume", MissionCommandType.Resume, role, cancellationToken);
+    public Task<MissionCommandResult> ResumeTaskChainAsync(string robotId, UserRole role, CancellationToken cancellationToken = default)
+        => SendTaskChainControlAsync("api/taskchains/resume", MissionCommandType.Resume, new TaskChainControlRequest { RobotId = robotId }, role, cancellationToken);
 
-    public Task<MissionCommandResult> CancelTaskChainAsync(UserRole role, CancellationToken cancellationToken = default)
-        => SendTaskChainControlAsync("api/taskchains/cancel", MissionCommandType.Cancel, role, cancellationToken);
+    public Task<MissionCommandResult> CancelTaskChainAsync(string robotId, UserRole role, CancellationToken cancellationToken = default)
+        => SendTaskChainControlAsync("api/taskchains/cancel", MissionCommandType.Cancel, new TaskChainControlRequest { RobotId = robotId }, role, cancellationToken);
 
     public async Task<MapEntity> UpsertMapEntityAsync(MapEntity entity, UserRole role, CancellationToken cancellationToken = default)
     {
@@ -134,17 +163,18 @@ public sealed class AgvApiClient(HttpClient httpClient)
     private async Task<MissionCommandResult> SendTaskChainControlAsync(
         string uri,
         MissionCommandType commandType,
+        TaskChainControlRequest request,
         UserRole role,
         CancellationToken cancellationToken)
     {
         using var message = CreateRequest(HttpMethod.Post, uri, role);
-        message.Content = JsonContent.Create(new { });
+        message.Content = JsonContent.Create(request);
         using var response = await httpClient.SendAsync(message, cancellationToken);
         var result = await response.Content.ReadFromJsonAsync<MissionCommandResult>(cancellationToken: cancellationToken);
 
         return result ?? new MissionCommandResult(
             Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
-            string.Empty,
+            request.RobotId,
             commandType,
             MissionCommandStatus.Rejected,
             "Backend did not return a control response.",

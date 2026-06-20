@@ -325,6 +325,11 @@ public record TaskChainRunRequest
     public bool Confirmed { get; set; }
 }
 
+public record TaskChainControlRequest
+{
+    public string RobotId { get; set; } = string.Empty;
+}
+
 public record TaskChainRunResult(
     string RunId,
     string RobotId,
@@ -374,4 +379,5 @@ public record RealtimeEvent(
     MapEntity? MapEntity = null,
     SiteHealth? Health = null,
     string? Message = null);
+
 

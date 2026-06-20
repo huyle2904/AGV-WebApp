@@ -33,29 +33,33 @@ public sealed class TaskChainCoordinator(
     public TaskChainRunSnapshot? GetActiveRun(string? robotId = null)
         => store.GetActiveRun(robotId);
 
+    public IReadOnlyList<TaskChainRunSnapshot> GetRecentRuns(string? robotId = null)
+        => store.GetRecentRuns(robotId);
+
     public async Task<TaskChainRunResult> ExecuteAsync(TaskChainRunRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
     {
         var requestedAt = DateTimeOffset.UtcNow;
         var robot = plantStore.GetRobot(request.RobotId);
         if (robot is null)
         {
-            return BuildRejectedRun(request, "Robot was not found.", requestedAt);
+            return RejectAndAudit(request, requestedByRole, "Robot was not found.", requestedAt);
         }
 
         if (!request.Confirmed)
         {
-            return BuildRejectedRun(request, "TaskChain execution requires explicit confirmation.", requestedAt);
+            return RejectAndAudit(request, requestedByRole, "TaskChain execution requires explicit confirmation.", requestedAt);
         }
 
         var safetyRejection = BuildSafetyRejection(robot, request.RobotId);
         if (safetyRejection is not null)
         {
-            return BuildRejectedRun(request, safetyRejection, requestedAt);
+            return RejectAndAudit(request, requestedByRole, safetyRejection, requestedAt);
         }
 
-        if (store.GetActiveRun(request.RobotId) is not null)
+        var activeRun = store.GetActiveRun(request.RobotId);
+        if (activeRun is not null && !IsTerminal(activeRun.Run.Status))
         {
-            return BuildRejectedRun(request, "Another TaskChain is already active on this robot.", requestedAt);
+            return RejectAndAudit(request, requestedByRole, "Another TaskChain is already active on this robot.", requestedAt);
         }
 
         var result = await workerClient.ExecuteTaskChainAsync(request, cancellationToken);
@@ -74,15 +78,16 @@ public sealed class TaskChainCoordinator(
         var snapshot = new TaskChainRunSnapshot(result, null, null, requestedByRole, DateTimeOffset.UtcNow);
         if (!store.TryStartRun(snapshot))
         {
-            return BuildRejectedRun(request, "Another TaskChain became active before this run started.", requestedAt);
+            return RejectAndAudit(request, requestedByRole, "Another TaskChain became active before this run started.", requestedAt);
         }
 
         await EmitAsync("taskchain.started", snapshot, result.Message, cancellationToken);
         return result;
     }
 
-    public async Task<MissionCommandResult> PauseAsync(UserRole requestedByRole, CancellationToken cancellationToken)
+    public async Task<MissionCommandResult> PauseAsync(TaskChainControlRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
         => await SendControlAsync(
+            request,
             MissionCommandType.Pause,
             requestedByRole,
             "TaskChainPause",
@@ -90,8 +95,9 @@ public sealed class TaskChainCoordinator(
             requireFullSafety: true,
             cancellationToken);
 
-    public async Task<MissionCommandResult> ResumeAsync(UserRole requestedByRole, CancellationToken cancellationToken)
+    public async Task<MissionCommandResult> ResumeAsync(TaskChainControlRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
         => await SendControlAsync(
+            request,
             MissionCommandType.Resume,
             requestedByRole,
             "TaskChainResume",
@@ -99,8 +105,9 @@ public sealed class TaskChainCoordinator(
             requireFullSafety: true,
             cancellationToken);
 
-    public async Task<MissionCommandResult> CancelAsync(UserRole requestedByRole, CancellationToken cancellationToken)
+    public async Task<MissionCommandResult> CancelAsync(TaskChainControlRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
         => await SendControlAsync(
+            request,
             MissionCommandType.Cancel,
             requestedByRole,
             "TaskChainCancel",
@@ -112,6 +119,11 @@ public sealed class TaskChainCoordinator(
     {
         foreach (var snapshot in store.GetActiveRuns())
         {
+            if (IsTerminal(snapshot.Run.Status))
+            {
+                continue;
+            }
+
             await RefreshActiveRunAsync(snapshot, cancellationToken);
         }
     }
@@ -136,7 +148,7 @@ public sealed class TaskChainCoordinator(
         }
 
         var status = ResolveRunStatus(snapshot.Run.StartedAt, chainStatus, runtimeStatus, discoveredTaskId);
-        var completedAt = IsTerminal(status) ? DateTimeOffset.UtcNow : null;
+        DateTimeOffset? completedAt = IsTerminal(status) ? DateTimeOffset.UtcNow : null;
         var message = BuildRunMessage(snapshot.Run.TaskChainName, status, discoveredTaskId, runtimeStatus?.Info);
         var updatedRun = snapshot.Run with
         {
@@ -176,6 +188,7 @@ public sealed class TaskChainCoordinator(
     }
 
     private async Task<MissionCommandResult> SendControlAsync(
+        TaskChainControlRequest request,
         MissionCommandType commandType,
         UserRole requestedByRole,
         string operation,
@@ -183,13 +196,25 @@ public sealed class TaskChainCoordinator(
         bool requireFullSafety,
         CancellationToken cancellationToken)
     {
-        var activeRun = store.GetActiveRun();
-        if (activeRun is null)
+        if (string.IsNullOrWhiteSpace(request.RobotId))
         {
             return new MissionCommandResult(
                 Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
                 string.Empty,
-                MissionCommandType.Cancel,
+                commandType,
+                MissionCommandStatus.Rejected,
+                "RobotId is required.",
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow);
+        }
+
+        var activeRun = store.GetActiveRun(request.RobotId);
+        if (activeRun is null || IsTerminal(activeRun.Run.Status))
+        {
+            return new MissionCommandResult(
+                Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
+                request.RobotId,
+                commandType,
                 MissionCommandStatus.Rejected,
                 "No active TaskChain run was found.",
                 DateTimeOffset.UtcNow,
@@ -202,7 +227,7 @@ public sealed class TaskChainCoordinator(
             return new MissionCommandResult(
                 Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
                 activeRun.Run.RobotId,
-                MissionCommandType.Cancel,
+                commandType,
                 MissionCommandStatus.Rejected,
                 "Robot was not found.",
                 DateTimeOffset.UtcNow,
@@ -215,7 +240,7 @@ public sealed class TaskChainCoordinator(
             return new MissionCommandResult(
                 Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
                 activeRun.Run.RobotId,
-                MissionCommandType.Cancel,
+                commandType,
                 MissionCommandStatus.Rejected,
                 rejection,
                 DateTimeOffset.UtcNow,
@@ -224,12 +249,17 @@ public sealed class TaskChainCoordinator(
 
         var result = await action(cancellationToken);
         AddAudit(activeRun.Run.RobotId, requestedByRole, result.Message, result.Status, operation);
+        return result with { RobotId = activeRun.Run.RobotId };
+    }
 
-        if (result.Status == MissionCommandStatus.Accepted)
-        {
-            await RefreshActiveRunAsync(activeRun, cancellationToken);
-        }
-
+    private TaskChainRunResult RejectAndAudit(
+        TaskChainRunRequest request,
+        UserRole requestedByRole,
+        string message,
+        DateTimeOffset requestedAt)
+    {
+        var result = BuildRejectedRun(request, message, requestedAt);
+        AddAudit(request.RobotId, requestedByRole, message, MissionCommandStatus.Rejected, $"TaskChainExecute:{request.TaskChainName}");
         return result;
     }
 
@@ -413,5 +443,3 @@ public sealed class TaskChainCoordinator(
         };
     }
 }
-
-

@@ -16,6 +16,17 @@ public sealed class TaskChainsController(TaskChainCoordinator coordinator) : Con
         return Ok(result);
     }
 
+    [HttpGet("active-run")]
+    public ActionResult<TaskChainRunSnapshot?> GetActiveRun([FromQuery] string? robotId)
+    {
+        var result = coordinator.GetActiveRun(robotId);
+        return result is null ? NoContent() : Ok(result);
+    }
+
+    [HttpGet("history")]
+    public ActionResult<IReadOnlyList<TaskChainRunSnapshot>> GetHistory([FromQuery] string? robotId)
+        => Ok(coordinator.GetRecentRuns(robotId));
+
     [HttpGet("{name}")]
     public async Task<ActionResult<SeerTaskChainStatus>> GetTaskChain(string name, CancellationToken cancellationToken)
     {
@@ -30,30 +41,24 @@ public sealed class TaskChainsController(TaskChainCoordinator coordinator) : Con
         return result.Status == TaskChainRunStatus.Rejected ? BadRequest(result) : Ok(result);
     }
 
-    [HttpGet("active-run")]
-    public ActionResult<TaskChainRunSnapshot?> GetActiveRun()
-    {
-        return Ok(coordinator.GetActiveRun());
-    }
-
     [HttpPost("pause")]
-    public async Task<ActionResult<MissionCommandResult>> Pause(CancellationToken cancellationToken)
+    public async Task<ActionResult<MissionCommandResult>> Pause([FromBody] TaskChainControlRequest request, CancellationToken cancellationToken)
     {
-        var result = await coordinator.PauseAsync(Request.ResolveRole(), cancellationToken);
+        var result = await coordinator.PauseAsync(request, Request.ResolveRole(), cancellationToken);
         return result.Status == MissionCommandStatus.Rejected ? BadRequest(result) : Ok(result);
     }
 
     [HttpPost("resume")]
-    public async Task<ActionResult<MissionCommandResult>> Resume(CancellationToken cancellationToken)
+    public async Task<ActionResult<MissionCommandResult>> Resume([FromBody] TaskChainControlRequest request, CancellationToken cancellationToken)
     {
-        var result = await coordinator.ResumeAsync(Request.ResolveRole(), cancellationToken);
+        var result = await coordinator.ResumeAsync(request, Request.ResolveRole(), cancellationToken);
         return result.Status == MissionCommandStatus.Rejected ? BadRequest(result) : Ok(result);
     }
 
     [HttpPost("cancel")]
-    public async Task<ActionResult<MissionCommandResult>> Cancel(CancellationToken cancellationToken)
+    public async Task<ActionResult<MissionCommandResult>> Cancel([FromBody] TaskChainControlRequest request, CancellationToken cancellationToken)
     {
-        var result = await coordinator.CancelAsync(Request.ResolveRole(), cancellationToken);
+        var result = await coordinator.CancelAsync(request, Request.ResolveRole(), cancellationToken);
         return result.Status == MissionCommandStatus.Rejected ? BadRequest(result) : Ok(result);
     }
 }
