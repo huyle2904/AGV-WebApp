@@ -378,6 +378,5 @@ public record RealtimeEvent(
     TaskChainRunSnapshot? TaskChainRun = null,
     MapEntity? MapEntity = null,
     SiteHealth? Health = null,
-    string? Message = null);
-
-
+    string? Message = null,
+    WorkflowRunDto? WorkflowRun = null);

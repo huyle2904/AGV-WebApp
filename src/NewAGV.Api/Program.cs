@@ -16,10 +16,14 @@ builder.Services.AddSingleton<AgvPlantStore>();
 builder.Services.AddSingleton<TaskChainStore>();
 builder.Services.AddSingleton<CommandDispatcher>();
 builder.Services.AddSingleton<TaskChainCoordinator>();
+builder.Services.AddScoped<WorkflowDefinitionService>();
+builder.Services.AddScoped<WorkflowValidationService>();
+builder.Services.AddScoped<WorkflowExecutionService>();
 builder.Services.AddHttpClient<AgvGatewayClient>();
 builder.Services.AddHttpClient<SeerWorkerClient>();
 builder.Services.AddHostedService<DatabaseInitializationService>();
 builder.Services.AddHostedService<TaskChainMonitorService>();
+builder.Services.AddHostedService<WorkflowMonitorService>();
 
 if (builder.Configuration.GetValue<bool>("Integration:EnableSimulation"))
 {
