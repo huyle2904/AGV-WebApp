@@ -1,4 +1,6 @@
+using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using NewAGV.Contracts;
 
 namespace NewAGV.Web.Services;
@@ -28,6 +30,115 @@ public sealed class AgvApiClient(HttpClient httpClient)
     public async Task<IReadOnlyList<MissionAuditEntry>> GetAuditsAsync(CancellationToken cancellationToken = default)
         => await httpClient.GetFromJsonAsync<List<MissionAuditEntry>>("api/audit", cancellationToken) ?? [];
 
+    public async Task<IReadOnlyList<SeerTaskChainSummary>> GetTaskChainsAsync(CancellationToken cancellationToken = default)
+        => await httpClient.GetFromJsonAsync<List<SeerTaskChainSummary>>("api/taskchains", cancellationToken) ?? [];
+
+    public async Task<SeerTaskChainStatus?> GetTaskChainAsync(string taskChainName, CancellationToken cancellationToken = default)
+        => await httpClient.GetFromJsonAsync<SeerTaskChainStatus>($"api/taskchains/{Uri.EscapeDataString(taskChainName)}", cancellationToken);
+
+    public async Task<IReadOnlyList<WorkflowSummaryDto>> GetWorkflowsAsync(CancellationToken cancellationToken = default)
+        => await httpClient.GetFromJsonAsync<List<WorkflowSummaryDto>>("api/workflows", cancellationToken) ?? [];
+
+    public async Task<WorkflowDetailDto?> GetWorkflowAsync(Guid workflowId, CancellationToken cancellationToken = default)
+        => await httpClient.GetFromJsonAsync<WorkflowDetailDto>($"api/workflows/{workflowId}", cancellationToken);
+
+    public async Task<WorkflowDetailDto> CreateWorkflowAsync(CreateWorkflowRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync("api/workflows", request, cancellationToken);
+        return await ReadRequiredAsync<WorkflowDetailDto>(response, "Backend did not return a workflow response.", cancellationToken);
+    }
+
+    public async Task<WorkflowDetailDto> UpdateWorkflowAsync(Guid workflowId, UpdateWorkflowRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PutAsJsonAsync($"api/workflows/{workflowId}", request, cancellationToken);
+        return await ReadRequiredAsync<WorkflowDetailDto>(response, "Backend did not return an updated workflow response.", cancellationToken);
+    }
+
+    public async Task<WorkflowDetailDto> ReplaceWorkflowStepsAsync(Guid workflowId, ReplaceWorkflowStepsRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PutAsJsonAsync($"api/workflows/{workflowId}/steps", request, cancellationToken);
+        return await ReadRequiredAsync<WorkflowDetailDto>(response, "Backend did not return updated workflow steps.", cancellationToken);
+    }
+
+    public async Task<WorkflowDetailDto> DuplicateWorkflowAsync(Guid workflowId, DuplicateWorkflowRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync($"api/workflows/{workflowId}/duplicate", request, cancellationToken);
+        return await ReadRequiredAsync<WorkflowDetailDto>(response, "Backend did not return a duplicated workflow response.", cancellationToken);
+    }
+
+    public async Task<WorkflowDetailDto> PublishWorkflowAsync(Guid workflowId, PublishWorkflowRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync($"api/workflows/{workflowId}/publish", request, cancellationToken);
+        return await ReadRequiredAsync<WorkflowDetailDto>(response, "Backend did not return a publish workflow response.", cancellationToken);
+    }
+
+    public async Task DeleteWorkflowAsync(Guid workflowId, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.DeleteAsync($"api/workflows/{workflowId}", cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<WorkflowValidationResult> ValidateWorkflowAsync(Guid workflowId, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsync($"api/workflows/{workflowId}/validate", content: null, cancellationToken);
+        return await ReadRequiredAsync<WorkflowValidationResult>(response, "Backend did not return a workflow validation response.", cancellationToken);
+    }
+
+    public async Task<WorkflowRunDto> ExecuteWorkflowAsync(Guid workflowId, ExecuteWorkflowRequest request, UserRole role, CancellationToken cancellationToken = default)
+    {
+        using var message = CreateRequest(HttpMethod.Post, $"api/workflows/{workflowId}/execute", role);
+        message.Content = JsonContent.Create(request);
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        return await ReadRequiredAsync<WorkflowRunDto>(response, "Backend did not return a workflow run response.", cancellationToken);
+    }
+
+    public Task<WorkflowRunDto?> GetActiveWorkflowRunAsync(CancellationToken cancellationToken = default)
+        => GetActiveWorkflowRunAsync(null, cancellationToken);
+
+    public async Task<WorkflowRunDto?> GetActiveWorkflowRunAsync(string? robotId, CancellationToken cancellationToken = default)
+    {
+        var uri = string.IsNullOrWhiteSpace(robotId)
+            ? "api/workflows/active-run"
+            : $"api/workflows/active-run?robotId={Uri.EscapeDataString(robotId)}";
+        return await GetOptionalAsync<WorkflowRunDto>(uri, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<WorkflowHistoryEntryDto>> GetWorkflowHistoryAsync(string? robotId, CancellationToken cancellationToken = default)
+    {
+        var uri = string.IsNullOrWhiteSpace(robotId)
+            ? "api/workflows/history"
+            : $"api/workflows/history?robotId={Uri.EscapeDataString(robotId)}";
+        return await httpClient.GetFromJsonAsync<List<WorkflowHistoryEntryDto>>(uri, cancellationToken) ?? [];
+    }
+
+    public Task<WorkflowRunDto> PauseWorkflowAsync(string robotId, UserRole role, CancellationToken cancellationToken = default)
+        => SendWorkflowControlAsync("api/workflows/pause", new WorkflowControlRequest { RobotId = robotId }, role, cancellationToken);
+
+    public Task<WorkflowRunDto> ResumeWorkflowAsync(string robotId, UserRole role, CancellationToken cancellationToken = default)
+        => SendWorkflowControlAsync("api/workflows/resume", new WorkflowControlRequest { RobotId = robotId }, role, cancellationToken);
+
+    public Task<WorkflowRunDto> CancelWorkflowAsync(string robotId, UserRole role, CancellationToken cancellationToken = default)
+        => SendWorkflowControlAsync("api/workflows/cancel", new WorkflowControlRequest { RobotId = robotId }, role, cancellationToken);
+
+    public Task<TaskChainRunSnapshot?> GetActiveTaskChainRunAsync(CancellationToken cancellationToken = default)
+        => GetActiveTaskChainRunAsync(null, cancellationToken);
+
+    public async Task<TaskChainRunSnapshot?> GetActiveTaskChainRunAsync(string? robotId, CancellationToken cancellationToken = default)
+    {
+        var uri = string.IsNullOrWhiteSpace(robotId)
+            ? "api/taskchains/active-run"
+            : $"api/taskchains/active-run?robotId={Uri.EscapeDataString(robotId)}";
+        return await GetOptionalAsync<TaskChainRunSnapshot>(uri, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<TaskChainRunSnapshot>> GetTaskChainHistoryAsync(string? robotId, CancellationToken cancellationToken = default)
+    {
+        var uri = string.IsNullOrWhiteSpace(robotId)
+            ? "api/taskchains/history"
+            : $"api/taskchains/history?robotId={Uri.EscapeDataString(robotId)}";
+        return await httpClient.GetFromJsonAsync<List<TaskChainRunSnapshot>>(uri, cancellationToken) ?? [];
+    }
+
     public async Task<MissionCommandResult> DispatchAsync(MissionCommandRequest request, UserRole role, CancellationToken cancellationToken = default)
     {
         using var message = CreateRequest(HttpMethod.Post, "api/commands/dispatch", role);
@@ -35,14 +146,7 @@ public sealed class AgvApiClient(HttpClient httpClient)
         using var response = await httpClient.SendAsync(message, cancellationToken);
         var result = await response.Content.ReadFromJsonAsync<MissionCommandResult>(cancellationToken: cancellationToken);
 
-        return result ?? new MissionCommandResult(
-            Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
-            request.RobotId,
-            request.CommandType,
-            MissionCommandStatus.Rejected,
-            "Backend did not return a response.",
-            DateTimeOffset.UtcNow,
-            DateTimeOffset.UtcNow);
+        return result ?? new MissionCommandResult(Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(), request.RobotId, request.CommandType, MissionCommandStatus.Rejected, "Backend did not return a response.", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
     }
 
     public async Task<MissionCommandResult> RelocateAsync(SeerRelocationRequest request, UserRole role, CancellationToken cancellationToken = default)
@@ -52,14 +156,7 @@ public sealed class AgvApiClient(HttpClient httpClient)
         using var response = await httpClient.SendAsync(message, cancellationToken);
         var result = await response.Content.ReadFromJsonAsync<MissionCommandResult>(cancellationToken: cancellationToken);
 
-        return result ?? new MissionCommandResult(
-            Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
-            string.Empty,
-            MissionCommandType.Pause,
-            MissionCommandStatus.Rejected,
-            "Backend did not return a response.",
-            DateTimeOffset.UtcNow,
-            DateTimeOffset.UtcNow);
+        return result ?? new MissionCommandResult(Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(), string.Empty, MissionCommandType.Pause, MissionCommandStatus.Rejected, "Backend did not return a response.", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
     }
 
     public async Task<MissionCommandResult> TeleopDriveAsync(TeleopRequest request, UserRole role, CancellationToken cancellationToken = default)
@@ -69,15 +166,27 @@ public sealed class AgvApiClient(HttpClient httpClient)
         using var response = await httpClient.SendAsync(message, cancellationToken);
         var result = await response.Content.ReadFromJsonAsync<MissionCommandResult>(cancellationToken: cancellationToken);
 
-        return result ?? new MissionCommandResult(
-            Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
-            string.Empty,
-            MissionCommandType.Teleop,
-            MissionCommandStatus.Rejected,
-            "Backend did not return a response.",
-            DateTimeOffset.UtcNow,
-            DateTimeOffset.UtcNow);
+        return result ?? new MissionCommandResult(Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(), string.Empty, MissionCommandType.Teleop, MissionCommandStatus.Rejected, "Backend did not return a response.", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
     }
+
+    public async Task<TaskChainRunResult> ExecuteTaskChainAsync(TaskChainRunRequest request, UserRole role, CancellationToken cancellationToken = default)
+    {
+        using var message = CreateRequest(HttpMethod.Post, "api/taskchains/execute", role);
+        message.Content = JsonContent.Create(request);
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<TaskChainRunResult>(cancellationToken: cancellationToken);
+
+        return result ?? new TaskChainRunResult(Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(), request.RobotId, request.TaskChainName, TaskChainRunStatus.Rejected, "Backend did not return a task chain response.", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null);
+    }
+
+    public Task<MissionCommandResult> PauseTaskChainAsync(string robotId, UserRole role, CancellationToken cancellationToken = default)
+        => SendTaskChainControlAsync("api/taskchains/pause", MissionCommandType.Pause, new TaskChainControlRequest { RobotId = robotId }, role, cancellationToken);
+
+    public Task<MissionCommandResult> ResumeTaskChainAsync(string robotId, UserRole role, CancellationToken cancellationToken = default)
+        => SendTaskChainControlAsync("api/taskchains/resume", MissionCommandType.Resume, new TaskChainControlRequest { RobotId = robotId }, role, cancellationToken);
+
+    public Task<MissionCommandResult> CancelTaskChainAsync(string robotId, UserRole role, CancellationToken cancellationToken = default)
+        => SendTaskChainControlAsync("api/taskchains/cancel", MissionCommandType.Cancel, new TaskChainControlRequest { RobotId = robotId }, role, cancellationToken);
 
     public async Task<MapEntity> UpsertMapEntityAsync(MapEntity entity, UserRole role, CancellationToken cancellationToken = default)
     {
@@ -95,10 +204,62 @@ public sealed class AgvApiClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
     }
 
+    private async Task<WorkflowRunDto> SendWorkflowControlAsync(string uri, WorkflowControlRequest request, UserRole role, CancellationToken cancellationToken)
+    {
+        using var message = CreateRequest(HttpMethod.Post, uri, role);
+        message.Content = JsonContent.Create(request);
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        return await ReadRequiredAsync<WorkflowRunDto>(response, "Backend did not return a workflow control response.", cancellationToken);
+    }
+
+    private async Task<MissionCommandResult> SendTaskChainControlAsync(
+        string uri,
+        MissionCommandType commandType,
+        TaskChainControlRequest request,
+        UserRole role,
+        CancellationToken cancellationToken)
+    {
+        using var message = CreateRequest(HttpMethod.Post, uri, role);
+        message.Content = JsonContent.Create(request);
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<MissionCommandResult>(cancellationToken: cancellationToken);
+
+        return result ?? new MissionCommandResult(Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(), request.RobotId, commandType, MissionCommandStatus.Rejected, "Backend did not return a control response.", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+    }
+
     private static HttpRequestMessage CreateRequest(HttpMethod method, string uri, UserRole role)
     {
         var message = new HttpRequestMessage(method, uri);
         message.Headers.Add("X-Demo-Role", role.ToString());
         return message;
+    }
+
+    private async Task<T?> GetOptionalAsync<T>(string uri, CancellationToken cancellationToken) where T : class
+    {
+        using var response = await httpClient.GetAsync(uri, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NoContent)
+        {
+            return null;
+        }
+
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<T>(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    }
+
+    private static async Task<T> ReadRequiredAsync<T>(HttpResponseMessage response, string fallbackMessage, CancellationToken cancellationToken)
+    {
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken);
+        if (payload is null)
+        {
+            throw new InvalidOperationException(fallbackMessage);
+        }
+
+        return payload;
     }
 }

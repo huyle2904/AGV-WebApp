@@ -17,7 +17,7 @@ public sealed class AgvPlantStore
         new(MissionCommandType.Resume, false, UserRole.Operator, true, "Resume a paused mission."),
         new(MissionCommandType.Cancel, true, UserRole.Operator, true, "Cancel the active mission."),
         new(MissionCommandType.ReturnToHome, true, UserRole.Operator, true, "Return the robot to the home station."),
-        new(MissionCommandType.Teleop, true, UserRole.Engineer, true, "Restricted open-loop teleoperation.")
+        new(MissionCommandType.Teleop, true, UserRole.Operator, true, "Restricted open-loop teleoperation.")
     ];
 
     private readonly object _auditLock = new();

@@ -1,0 +1,2607 @@
+html, body {
+    min-height: 100%;
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background: #eef2f6;
+    color: #111827;
+}
+
+/* Sidebar & NavMenu */
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.sidebar {
+    background: #0f172a;
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex-shrink: 0;
+    width: 220px;
+}
+
+.page.sidebar-collapsed .sidebar {
+    width: 60px;
+}
+
+.nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.25rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav-logo {
+    width: 2.1rem;
+    height: 2.1rem;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #0f8f86, #14b8a6);
+    color: #fff;
+    font-weight: 900;
+    font-size: 0.9rem;
+    flex: 0 0 auto;
+}
+
+.nav-logo::before {
+    content: "\E80F";
+    font-family: "Segoe MDL2 Assets";
+}
+
+.nav-brand-text {
+    color: #f1f5f9;
+    font-weight: 700;
+    font-size: 1.05rem;
+    white-space: nowrap;
+}
+
+.nav-collapse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin: 0.5rem auto 0.25rem;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #94a3b8;
+    cursor: pointer;
+}
+
+.nav-collapse-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #e2e8f0;
+}
+
+.nav-collapse-icon::before {
+    content: "\E76C";
+    font-family: "Segoe MDL2 Assets";
+    font-size: 0.85rem;
+}
+
+.nav-collapse-btn.collapsed .nav-collapse-icon::before {
+    content: "\E76B";
+}
+
+.nav-menu {
+    display: grid;
+    gap: 0.15rem;
+    padding: 0.5rem 0.6rem;
+}
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 7px;
+    color: #94a3b8;
+    text-decoration: none;
+    font-size: 0.88rem;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+}
+
+.nav-link:hover {
+    background: rgba(255, 255, 255, 0.07);
+    color: #e2e8f0;
+}
+
+.nav-link.active {
+    background: rgba(15, 143, 134, 0.18);
+    color: #2dd4bf;
+    font-weight: 600;
+}
+
+.nav-link.collapsed {
+    justify-content: center;
+    padding: 0.6rem;
+}
+
+.nav-link.collapsed.active {
+    box-shadow: inset 3px 0 0 #0f8f86;
+}
+
+.nav-icon {
+    display: grid;
+    place-items: center;
+    width: 1.3rem;
+    font-family: "Segoe MDL2 Assets";
+    font-size: 0.95rem;
+    flex: 0 0 auto;
+}
+
+.nav-icon-home::before { content: "\E80F"; }
+.nav-icon-map::before { content: "\E707"; }
+.nav-icon-command::before { content: "\E71B"; }
+.nav-icon-config::before { content: "\E713"; }
+.nav-icon-audit::before { content: "\E8D2"; }
+
+/* ============================================================
+   Shared components
+   ============================================================ */
+
+
+a, .btn-link {
+    color: #0f766e;
+}
+
+.content {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+}
+
+h1, h2, h3 {
+    color: #111827;
+    margin-bottom: 0.75rem;
+}
+
+h1 {
+    font-size: 1.85rem;
+    line-height: 1.2;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.page-intro {
+    max-width: 58rem;
+    color: #64748b;
+    margin-bottom: 1.25rem;
+}
+
+.status-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid #fed7aa;
+    background: #fff7ed;
+}
+
+.status-banner strong,
+.status-banner span {
+    display: block;
+}
+
+.status-banner strong {
+    color: #9a3412;
+}
+
+.status-banner span {
+    color: #7c2d12;
+}
+
+.status-code {
+    border-radius: 999px;
+    background: #ffedd5;
+    color: #9a3412;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.stat-card,
+.panel {
+    background: #ffffff;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.stat-card {
+    padding: 1rem;
+}
+
+.stat-label,
+.stat-foot,
+.panel-header,
+.audit-meta,
+.entity-item span,
+.inline-status,
+.empty-state {
+    color: #64748b;
+}
+
+.stat-value {
+    display: block;
+    font-size: 2rem;
+    color: #111827;
+    margin: 0.25rem 0;
+}
+
+.panel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.panel {
+    padding: 1rem;
+}
+
+.panel-map {
+    min-height: 420px;
+    padding: 0.75rem;
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.panel-header h2 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.section-split {
+    margin-top: 1.4rem;
+}
+
+.pill {
+    border-radius: 999px;
+    background: #ecfeff;
+    color: #0f766e;
+    padding: 0.28rem 0.65rem;
+    font-size: 0.8rem;
+}
+
+.table-shell {
+    overflow-x: auto;
+}
+
+.app-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.app-table th,
+.app-table td {
+    text-align: left;
+    padding: 0.72rem 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: top;
+    font-size: 0.92rem;
+}
+
+.app-table th {
+    font-size: 0.78rem;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0;
+}
+
+.audit-feed,
+.entity-list {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.audit-item,
+.entity-item,
+.empty-panel,
+.empty-map {
+    border: 1px solid #dbe3ec;
+    border-radius: 8px;
+    padding: 0.85rem;
+    background: #f8fafc;
+}
+
+.empty-panel strong,
+.empty-panel span,
+.empty-map strong,
+.empty-map span,
+.audit-title,
+.entity-item strong {
+    display: block;
+}
+
+.empty-panel strong,
+.empty-map strong,
+.audit-title,
+.entity-item strong {
+    color: #111827;
+}
+
+.empty-panel span,
+.empty-map span {
+    color: #64748b;
+    margin-top: 0.2rem;
+}
+
+.empty-map {
+    min-height: 390px;
+    display: grid;
+    place-content: center;
+    text-align: center;
+}
+
+.audit-message {
+    color: #1f2937;
+    margin-top: 0.25rem;
+}
+
+.map-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.8fr) minmax(280px, 0.9fr);
+    gap: 1rem;
+}
+
+.map-canvas {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 8px;
+    border: 1px solid #dbe3ec;
+    background: #f8fafc;
+}
+
+/* ============================================================
+   AGV Monitor (current live)
+   ============================================================ */
+
+/* AGV monitor redesign */
+:root {
+    --agv-background: #f6f8f9;
+    --agv-foreground: #1b2330;
+    --agv-card: #ffffff;
+    --agv-border: #e4e8ec;
+    --agv-muted: #eef1f3;
+    --agv-muted-text: #6b7480;
+    --agv-primary: #0e9ba8;
+    --agv-accent: #d6eef1;
+    --agv-success: #16a34a;
+    --agv-warning: #f59e0b;
+    --agv-warning-bg: #fef3c7;
+    --agv-danger: #dc2626;
+}
+
+.content.px-4:has(.agv-monitor-page) {
+    padding: 0 !important;
+    overflow: hidden;
+}
+
+.agv-monitor-page {
+    height: calc(100vh - 56px);
+    min-height: 560px;
+    overflow: hidden;
+    background: var(--agv-background);
+    color: var(--agv-foreground);
+    font-family: Inter, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+}
+
+.agv-loading,
+.agv-empty,
+.agv-empty-map {
+    display: grid;
+    place-content: center;
+    gap: 0.35rem;
+    min-height: 180px;
+    color: var(--agv-muted-text);
+    text-align: center;
+}
+
+.agv-loading strong,
+.agv-empty strong,
+.agv-empty-map strong {
+    color: var(--agv-foreground);
+}
+
+.agv-monitor-frame {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+}
+
+.agv-robot-panel {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    overflow-y: auto;
+    background: #ffffff;
+    border-right: 1px solid var(--agv-border);
+}
+
+.agv-card {
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #f8fbfc;
+}
+
+.agv-robot-card {
+    padding: 14px 12px 12px;
+}
+
+.agv-robot-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+
+.agv-robot-top h2 {
+    margin: 0 0 0.15rem;
+    color: #0f172a;
+    font-size: 1rem;
+    line-height: 1.2;
+}
+
+.agv-robot-top span,
+.agv-battery-row span,
+.agv-integration span {
+    color: var(--agv-muted-text);
+    font-size: 0.78rem;
+}
+
+.agv-battery-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 1rem;
+}
+
+.agv-battery-row strong {
+    color: #0f172a;
+    font-size: 0.86rem;
+}
+
+.agv-battery-track {
+    height: 6px;
+    margin-top: 0.45rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #dce5ea;
+}
+
+.agv-battery-fill {
+    display: block;
+    height: 100%;
+    max-width: 100%;
+    border-radius: inherit;
+    background: #10b981;
+}
+
+.agv-battery-warn { background: var(--agv-warning); }
+.agv-battery-low { background: var(--agv-danger); }
+
+.agv-status-card {
+    padding: 12px;
+}
+
+.agv-status-card h3 {
+    margin: 0 0 0.55rem;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.agv-status-list {
+    display: grid;
+}
+
+.agv-status-row {
+    min-height: 36px;
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+    border-bottom: 1px solid #d9e2ec;
+}
+
+.agv-status-row:last-child {
+    border-bottom: 0;
+}
+
+.agv-status-row > span {
+    color: #475569;
+}
+
+.agv-status-row strong {
+    color: #020617;
+    font-size: 0.82rem;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.agv-warning-summary {
+    min-height: 50px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.6rem;
+    border: 1px solid #f2c96d;
+    border-radius: 8px;
+    padding: 0 12px;
+    background: #fffaf0;
+    color: #92400e;
+    text-align: left;
+}
+
+.agv-warning-summary > span:last-child {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--agv-warning);
+    color: #fff;
+    font-weight: 700;
+}
+
+.agv-integration {
+    margin-top: auto;
+    display: grid;
+    gap: 0.3rem;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 12px;
+    background: #fff1f2;
+    color: #b91c1c;
+}
+
+.agv-integration.health-online {
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+    color: #15803d;
+}
+
+.agv-integration.health-degraded {
+    border-color: #fed7aa;
+    background: #fff7ed;
+    color: #c2410c;
+}
+
+.agv-workspace {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #f8fafc;
+}
+
+.agv-route-bar {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 0 12px;
+    background: #ffffff;
+    border-bottom: 1px solid var(--agv-border);
+}
+
+.agv-chip {
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid #dbe3ec;
+    border-radius: 999px;
+    padding: 0 0.65rem;
+    background: #f8fafc;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+button.agv-chip {
+    cursor: pointer;
+}
+
+.agv-chip-ok {
+    border-color: #99f6e4;
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.agv-chip-warn,
+.agv-chip-route {
+    border-color: #facc15;
+    background: #fffbeb;
+    color: #b45309;
+}
+
+.agv-alert-strip {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0 12px;
+    border-bottom: 1px solid #f2d080;
+    background: var(--agv-warning-bg);
+    color: #92400e;
+}
+
+.agv-alert-strip strong {
+    font-weight: 700;
+}
+
+.agv-alert-strip button {
+    margin-left: auto;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.agv-map-section {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background: #f1f5f7;
+}
+
+.agv-map-section::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(to right, rgba(148, 163, 184, 0.25) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(148, 163, 184, 0.25) 1px, transparent 1px);
+    background-size: 40px 40px;
+}
+
+.agv-map-canvas-wrap {
+    position: absolute;
+    inset: 0;
+    display: flex;
+}
+
+.agv-map-canvas-wrap .map-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    aspect-ratio: auto;
+    background: transparent;
+}
+
+.agv-map-toolbar {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    overflow: hidden;
+    border: 1px solid #dbe3ec;
+    border-radius: 6px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.agv-map-toolbar button {
+    min-width: 36px;
+    height: 36px;
+    border: 0;
+    border-right: 1px solid #e4e8ec;
+    background: #ffffff;
+    color: #475569;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.agv-map-toolbar button:last-child {
+    border-right: 0;
+}
+
+.agv-map-toolbar button:hover {
+    background: #f8fafc;
+    color: var(--agv-primary);
+}
+
+.agv-layer-controls {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 3;
+    display: flex;
+    gap: 0.65rem;
+    border: 1px solid #dbe3ec;
+    border-radius: 6px;
+    padding: 0.45rem 0.65rem;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.agv-layer-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: #334155;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.agv-layer-controls input {
+    accent-color: var(--agv-primary);
+}
+
+.agv-station-table {
+    flex: 0 0 122px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--agv-border);
+    background: #ffffff;
+    transition: flex-basis 150ms ease;
+}
+
+.agv-station-table.expanded {
+    flex-basis: 320px;
+}
+
+.agv-station-table header {
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--agv-border);
+    color: #334155;
+}
+
+.agv-station-table header strong {
+    font-size: 0.8rem;
+    letter-spacing: 0;
+}
+
+.agv-station-table header button {
+    border: 0;
+    background: transparent;
+    color: #334155;
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+
+.agv-table-scroll {
+    min-height: 0;
+    overflow: auto;
+}
+
+.agv-station-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+}
+
+.agv-station-table th,
+.agv-station-table td {
+    height: 32px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--agv-border);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.agv-station-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--agv-muted);
+    color: #52606d;
+    font-weight: 600;
+}
+
+.agv-station-table tr:hover td {
+    background: rgba(214, 238, 241, 0.35);
+}
+
+.agv-raw-dot,
+.agv-dot {
+    width: 7px;
+    height: 7px;
+    display: inline-block;
+    border-radius: 999px;
+    background: var(--agv-success);
+}
+
+.agv-raw-dot {
+    margin-right: 0.35rem;
+}
+
+.agv-dot-good { background: var(--agv-success); }
+.agv-dot-warn { background: var(--agv-warning); }
+.agv-dot-bad { background: var(--agv-danger); }
+.agv-dot-neutral { background: #94a3b8; }
+
+.agv-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 1rem;
+    height: 1rem;
+    font-family: "Segoe MDL2 Assets";
+    font-style: normal;
+    line-height: 1;
+}
+
+.agv-icon-battery::before { content: "\EBAA"; }
+.agv-icon-map::before { content: "\E707"; }
+.agv-icon-bell::before { content: "\E7ED"; }
+.agv-icon-alert::before { content: "\E7BA"; }
+
+.agv-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(15, 23, 42, 0.24);
+}
+
+.agv-warnings-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 51;
+    width: min(360px, 92vw);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 16px;
+    background: #ffffff;
+    border-left: 1px solid var(--agv-border);
+    box-shadow: -12px 0 28px rgba(15, 23, 42, 0.16);
+}
+
+.agv-warnings-drawer header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.agv-warnings-drawer h2 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.agv-warnings-drawer header button {
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--agv-border);
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.agv-warning-list {
+    display: grid;
+    gap: 0.65rem;
+    overflow-y: auto;
+}
+
+.agv-warning-card {
+    display: grid;
+    gap: 0.3rem;
+    border: 1px solid #fed7aa;
+    border-radius: 8px;
+    padding: 0.75rem;
+    background: #fff7ed;
+}
+
+.agv-warning-card div {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: #b45309;
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.agv-warning-card strong {
+    color: #0f172a;
+}
+
+.agv-warning-card p {
+    margin: 0;
+    color: #475569;
+}
+
+@media (max-width: 1180px) {
+    .agv-monitor-frame {
+        grid-template-columns: 240px minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 900px) {
+    .content.px-4:has(.agv-monitor-page) {
+        overflow: auto;
+    }
+
+    .agv-monitor-page {
+        height: auto;
+        min-height: calc(100vh - 56px);
+        overflow: visible;
+    }
+
+    .agv-monitor-frame {
+        grid-template-columns: 1fr;
+    }
+
+    .agv-robot-panel {
+        border-right: 0;
+        border-bottom: 1px solid var(--agv-border);
+    }
+
+    .agv-map-section {
+        min-height: 460px;
+    }
+}
+
+/* ============================================================
+   TaskChains
+   ============================================================ */
+
+.nav-icon-taskchain::before { content: "\E8FD"; }
+
+.taskchain-grid {
+    align-items: start;
+}
+
+.taskchain-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+.secondary-button {
+    background: #e2e8f0;
+    color: #1f2937;
+}
+
+.secondary-button:hover:not(:disabled) {
+    background: #cbd5e1;
+}
+
+.danger-button {
+    background: #dc2626;
+}
+
+.danger-button:hover:not(:disabled) {
+    background: #b91c1c;
+}
+
+.taskchain-detail-card {
+    display: grid;
+    gap: 0.35rem;
+    margin-top: 1rem;
+    padding: 0.85rem;
+    border: 1px solid #dbe3ec;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.taskchain-detail-card strong {
+    color: #111827;
+}
+
+.taskchain-detail-card span {
+    color: #475569;
+    font-size: 0.9rem;
+}
+
+.taskchain-row-button {
+    border: none;
+    padding: 0;
+    background: transparent;
+    color: #0f766e;
+    font: inherit;
+    cursor: pointer;
+}
+
+.taskchain-row-button:hover {
+    text-decoration: underline;
+}
+
+.taskchain-selected-row td {
+    background: #ecfeff;
+}
+
+.taskchain-runtime-grid,
+.taskchain-runtime-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+}
+
+.taskchain-runtime-message {
+    margin-top: 1rem;
+}
+
+.nav-icon-workflow::before { content: "\E821"; }
+
+/* ============================================================
+   Workflow — Flat panel design (matching Lovable)
+   ============================================================ */
+
+/* --- Icon system (Segoe MDL2 Assets) --- */
+.workflow-icon-inline {
+    display: inline-grid;
+    place-items: center;
+    width: 0.875rem;
+    height: 0.875rem;
+    font-family: "Segoe MDL2 Assets", "Segoe UI Symbol", sans-serif;
+    font-style: normal;
+    font-size: 0.8rem;
+    line-height: 1;
+    flex: 0 0 auto;
+    vertical-align: middle;
+}
+
+.workflow-icon-robot::before { content: "\E9D9"; }
+.workflow-icon-robot-sm::before { content: "\E7F4"; }
+.workflow-icon-search::before { content: "\E721"; }
+.workflow-icon-clock::before { content: "\E787"; }
+.workflow-icon-save::before { content: "\E74E"; }
+.workflow-icon-check::before { content: "\E73E"; }
+.workflow-icon-check-circle::before { content: "\xE73E"; }
+.workflow-icon-play::before { content: "\E768"; }
+.workflow-icon-pause::before { content: "\E769"; }
+.workflow-icon-resume::before { content: "\xE72C"; }
+.workflow-icon-stop::before { content: "\E71A"; }
+.workflow-icon-plus::before { content: "\E710"; }
+.workflow-icon-copy::before { content: "\E8C8"; }
+.workflow-icon-trash::before { content: "\E74D"; }
+.workflow-icon-edit::before { content: "\E70F"; }
+.workflow-icon-grip::before { content: "\E8D8"; }
+.workflow-icon-warning::before { content: "\E7BA"; }
+.workflow-icon-warning-sm::before { content: "\E7BA"; }
+.workflow-icon-error-sm::before { content: "\EA39"; }
+.workflow-icon-info::before { content: "\E946"; }
+.workflow-icon-activity::before { content: "\E9D9"; }
+.workflow-icon-chevron-down::before { content: "\E76C"; }
+
+/* --- Status dots --- */
+.workflow-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    display: inline-block;
+    background: #16a34a;
+    flex-shrink: 0;
+}
+
+.workflow-status-dot-warn {
+    background: #f59e0b;
+}
+
+.workflow-step-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: #d1d5db;
+    display: inline-block;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+/* --- Fit container --- */
+.content.px-4:has(.workflow-fit) {
+    padding: 0 !important;
+    overflow: hidden;
+}
+
+.workflow-fit {
+    height: calc(100vh - 56px - 2.55rem);
+    min-height: 520px;
+    overflow: hidden;
+}
+
+/* --- Page layout: flex column, gap-0 --- */
+.workflow-page {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- Header --- */
+.workflow-header {
+    border-bottom: 1px solid #e2e8f0;
+    background: #ffffff;
+    flex: 0 0 auto;
+}
+
+.workflow-header-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1.25rem;
+}
+
+.workflow-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.workflow-header-icon {
+    width: 1.75rem;
+    height: 1.75rem;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 0.375rem;
+    background: rgba(14, 155, 168, 0.1);
+    border: 1px solid rgba(14, 155, 168, 0.3);
+    color: #0e9ba8;
+    flex: 0 0 auto;
+}
+
+.workflow-header-icon::before {
+    content: "\E9D9";
+    font-family: "Segoe MDL2 Assets";
+    font-size: 0.85rem;
+}
+
+.workflow-header-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.workflow-breadcrumb-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+}
+
+.workflow-breadcrumb-sep {
+    color: rgba(100, 116, 139, 0.5);
+}
+
+.workflow-header-breadcrumb h1 {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.workflow-header-subtitle {
+    margin: 0.125rem 0 0;
+    font-size: 0.71875rem;
+    color: #64748b;
+}
+
+.workflow-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.6875rem;
+    color: #64748b;
+}
+
+.workflow-header-bridge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.workflow-header-divider {
+    width: 1px;
+    height: 1.25rem;
+    background: #e2e8f0;
+}
+
+.workflow-header-operator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+/* --- Action bar: px-5 py-2, flex, bg-panel-muted --- */
+.workflow-actionbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    padding: 0.5rem 1.25rem;
+    border-top: 1px solid #e2e8f0;
+    background: #f7f8fa;
+}
+
+/* --- Chip row + Toolbar actions row --- */
+.workflow-chip-row,
+.workflow-toolbar-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+/* --- Chip: h-6 px-2 rounded text-[11px] --- */
+.workflow-chip {
+    min-height: 1.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border: 1px solid #dbe3ec;
+    border-radius: 0.375rem;
+    padding: 0 0.5rem;
+    background: #ffffff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.6875rem;
+    white-space: nowrap;
+    cursor: default;
+}
+
+button.workflow-chip {
+    cursor: pointer;
+}
+
+.workflow-chip-label {
+    color: #64748b;
+}
+
+.workflow-chip-primary {
+    border-color: rgba(14, 155, 168, 0.3);
+    background: rgba(14, 155, 168, 0.06);
+    color: #0e9ba8;
+}
+
+.workflow-chip-ok {
+    border-color: rgba(22, 163, 74, 0.4);
+    background: rgba(22, 163, 74, 0.15);
+    color: #15803d;
+}
+
+.workflow-chip-warn {
+    border-color: rgba(245, 158, 11, 0.5);
+    background: rgba(245, 158, 11, 0.2);
+    color: #92400e;
+}
+
+.workflow-chip-muted {
+    border-color: #e2e8f0;
+    background: #f8fafc;
+    color: #64748b;
+}
+
+.workflow-chip-chevron {
+    display: inline-grid;
+    place-items: center;
+    font-family: "Segoe MDL2 Assets";
+    font-size: 0.6rem;
+    color: rgba(100, 116, 139, 0.6);
+}
+
+.workflow-chip-chevron::before {
+    content: "\E76C";
+}
+
+/* --- Toolbar divider --- */
+.workflow-toolbar-divider {
+    width: 1px;
+    height: 1.25rem;
+    background: #e2e8f0;
+    margin: 0 0.125rem;
+}
+
+/* --- Toolbar button: h-8 px-3 rounded text-xs --- */
+.workflow-toolbar-button {
+    min-height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border: 1px solid #dbe3ec;
+    border-radius: 0.375rem;
+    padding: 0 0.75rem;
+    background: #ffffff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.workflow-toolbar-button:hover {
+    background: #f1f5f9;
+}
+
+.workflow-toolbar-button-success {
+    border-color: #16a34a;
+    background: #16a34a;
+    color: #ffffff;
+}
+
+.workflow-toolbar-button-success:hover {
+    background: #15803d;
+}
+
+.workflow-toolbar-button-warning {
+    border-color: rgba(245, 158, 11, 0.6);
+    color: #92400e;
+}
+
+.workflow-toolbar-button-warning:hover {
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.workflow-toolbar-button-danger {
+    border-color: rgba(220, 38, 38, 0.5);
+    color: #dc2626;
+}
+
+.workflow-toolbar-button-danger:hover {
+    background: rgba(220, 38, 38, 0.1);
+}
+
+/* ============================================================
+   Workspace: 3-column grid, gap-0, border-b
+   ============================================================ */
+.workflow-workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.workflow-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr) 340px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+/* ============================================================
+   Left: Sidebar / Catalog — border-r, flat
+   ============================================================ */
+.workflow-sidebar {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #e2e8f0;
+    background: #ffffff;
+}
+
+.workflow-sidebar-header {
+    padding: 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+    display: grid;
+    gap: 0.5rem;
+}
+
+.workflow-sidebar-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.workflow-sidebar-title h2 {
+    margin: 0;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+}
+
+.workflow-sidebar-title span {
+    font-size: 0.625rem;
+    color: #64748b;
+}
+
+/* Search */
+.workflow-search {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    padding: 0 0.5rem;
+    background: #ffffff;
+}
+
+.workflow-search .workflow-icon-inline {
+    color: #94a3b8;
+    flex: 0 0 auto;
+}
+
+.workflow-search input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 2rem;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 0.75rem;
+    outline: none;
+}
+
+.workflow-search input:focus {
+    border-color: #0e9ba8;
+    box-shadow: 0 0 0 2px rgba(14, 155, 168, 0.2);
+}
+
+/* Filters */
+.workflow-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.workflow-filter {
+    min-height: 1.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    padding: 0 0.5rem;
+    background: #ffffff;
+    color: #64748b;
+    font: inherit;
+    font-size: 0.65625rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.workflow-filter:hover {
+    background: #f1f5f9;
+}
+
+.workflow-filter.active {
+    border-color: #0e9ba8;
+    background: #0e9ba8;
+    color: #ffffff;
+    font-weight: 700;
+}
+
+/* Catalog list */
+.workflow-catalog-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.workflow-catalog-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 0;
+    border-left: 2px solid transparent;
+    border-bottom: 1px solid rgba(214, 226, 236, 0.6);
+    border-radius: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.workflow-catalog-item:hover {
+    background: #f1f5f9;
+}
+
+.workflow-catalog-item.selected {
+    background: rgba(14, 155, 168, 0.08);
+    border-left-color: #0ea5e9;
+}
+
+.workflow-catalog-main {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.workflow-catalog-name {
+    font-size: 0.78125rem;
+    font-weight: 500;
+    color: #0f172a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workflow-catalog-meta {
+    font-size: 0.65625rem;
+    color: #64748b;
+    margin-top: 0.125rem;
+    font-family: "Cascadia Code", "Fira Code", monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Status chip (small inline badge) */
+.workflow-status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    padding: 0 0.375rem;
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.workflow-status-running {
+    border-color: rgba(22, 163, 74, 0.4);
+    background: rgba(22, 163, 74, 0.15);
+    color: #15803d;
+}
+
+.workflow-status-ready {
+    border-color: rgba(14, 155, 168, 0.3);
+    background: rgba(14, 155, 168, 0.08);
+    color: #0e9ba8;
+}
+
+.workflow-status-error {
+    border-color: rgba(220, 38, 38, 0.4);
+    background: rgba(220, 38, 38, 0.1);
+    color: #dc2626;
+}
+
+.workflow-status-draft {
+    border-color: #e2e8f0;
+    background: #f8fafc;
+    color: #64748b;
+}
+
+.workflow-status-done {
+    border-color: rgba(59, 130, 246, 0.3);
+    background: rgba(59, 130, 246, 0.08);
+    color: #2563eb;
+}
+
+/* Sidebar footer */
+.workflow-sidebar-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    border-top: 1px solid #e2e8f0;
+    background: #f7f8fa;
+}
+
+.workflow-footer-btn {
+    min-height: 1.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    padding: 0 0.5rem;
+    background: #ffffff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    cursor: pointer;
+    flex: 1 1 auto;
+}
+
+.workflow-footer-btn:hover {
+    background: #f1f5f9;
+}
+
+.workflow-footer-btn-primary {
+    border-color: #0e9ba8;
+    background: #0e9ba8;
+    color: #ffffff;
+}
+
+.workflow-footer-btn-primary:hover {
+    background: #0d8a94;
+}
+
+.workflow-footer-btn-icon {
+    flex: 0 0 auto;
+    min-width: 1.75rem;
+    padding: 0;
+}
+
+.workflow-footer-btn-danger {
+    color: #dc2626;
+}
+
+.workflow-footer-btn-danger:hover {
+    background: rgba(220, 38, 38, 0.1);
+}
+
+/* ============================================================
+   Center: Editor — flat, no card wrapper
+   ============================================================ */
+.workflow-editor {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #f7f8fa;
+    overflow: hidden;
+}
+
+/* Editor header */
+.workflow-editor-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #ffffff;
+}
+
+.workflow-editor-title-group {
+    min-width: 0;
+}
+
+.workflow-editor-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.workflow-editor-title h2 {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.workflow-editor-desc {
+    margin: 0.25rem 0 0;
+    font-size: 0.71875rem;
+    color: #64748b;
+}
+
+.workflow-editor-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.125rem;
+    font-size: 0.6875rem;
+    color: #64748b;
+    flex-shrink: 0;
+}
+
+.workflow-editor-meta-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.workflow-editor-meta strong {
+    color: #0f172a;
+}
+
+/* Mini chip */
+.workflow-mini-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.25rem;
+    padding: 0 0.375rem;
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 0.6875rem;
+}
+
+.workflow-mini-chip-primary {
+    border-color: rgba(14, 155, 168, 0.3);
+    background: rgba(14, 155, 168, 0.08);
+    color: #0e9ba8;
+}
+
+.workflow-mini-chip-mono {
+    font-family: "Cascadia Code", "Fira Code", monospace;
+}
+
+/* Validation strip */
+.workflow-validation-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.25rem;
+    background: rgba(245, 158, 11, 0.1);
+    border-bottom: 1px solid rgba(245, 158, 11, 0.4);
+    color: #92400e;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+.workflow-validation-strip .workflow-icon-inline {
+    flex-shrink: 0;
+    color: #b45309;
+}
+
+.workflow-validation-text {
+    flex: 1 1 auto;
+}
+
+.workflow-validation-text strong {
+    font-weight: 600;
+}
+
+.workflow-validation-link {
+    border: 0;
+    background: transparent;
+    color: #0e9ba8;
+    font: inherit;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.workflow-validation-link:hover {
+    text-decoration: underline;
+}
+
+.workflow-validation-btn {
+    min-height: 1.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.25rem;
+    padding: 0 0.5rem;
+    background: #ffffff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.6875rem;
+    cursor: pointer;
+}
+
+.workflow-validation-btn:hover {
+    background: #f1f5f9;
+}
+
+/* Canvas */
+.workflow-canvas {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.workflow-canvas > * {
+    width: 100%;
+    max-width: 680px;
+}
+
+/* ============================================================
+   Step cards — flex layout, grip/index/body/actions
+   ============================================================ */
+.workflow-step-wrapper {
+    width: 100%;
+}
+
+.workflow-step-card {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.workflow-step-card:hover {
+    border-color: rgba(14, 155, 168, 0.5);
+}
+
+.workflow-step-card.selected {
+    border-color: #0e9ba8;
+    box-shadow: 0 0 0 2px rgba(14, 155, 168, 0.15);
+}
+
+/* Grip handle: w-8 (32px) */
+.workflow-step-grip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    border-right: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #94a3b8;
+    cursor: grab;
+    flex-shrink: 0;
+}
+
+.workflow-step-grip:hover {
+    color: #64748b;
+}
+
+/* Index: w-10 (40px) */
+.workflow-step-index {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    border-right: 1px solid #e2e8f0;
+    background: #f8fafc;
+    font-family: "Cascadia Code", "Fira Code", monospace;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #94a3b8;
+    flex-shrink: 0;
+}
+
+/* Body: px-3 py-2.5 */
+.workflow-step-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.625rem 0.75rem;
+}
+
+.workflow-step-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.workflow-step-name {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #0f172a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workflow-step-chain {
+    display: block;
+    font-family: "Cascadia Code", "Fira Code", monospace;
+    font-size: 0.6875rem;
+    color: #64748b;
+    margin-top: 0.125rem;
+}
+
+.workflow-step-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-top: 0.25rem;
+    font-size: 0.6875rem;
+    color: #94a3b8;
+}
+
+/* Actions: w-7 h-7 buttons */
+.workflow-step-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0 0.5rem;
+    border-left: 1px solid #e2e8f0;
+    flex-shrink: 0;
+}
+
+.workflow-step-action-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: #94a3b8;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.workflow-step-action-btn:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.workflow-step-action-danger:hover {
+    background: rgba(220, 38, 38, 0.1);
+    color: #dc2626;
+}
+
+/* Connector between steps */
+.workflow-step-connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 1.5rem;
+    position: relative;
+}
+
+.workflow-step-connector-line {
+    position: absolute;
+    width: 1px;
+    height: 100%;
+    background: #e2e8f0;
+}
+
+.workflow-step-insert {
+    position: relative;
+    z-index: 1;
+    opacity: 0;
+    min-height: 1.25rem;
+    padding: 0 0.5rem;
+    border: 1px dashed #0e9ba8;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #0e9ba8;
+    font: inherit;
+    font-size: 0.625rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    transition: opacity 0.15s;
+}
+
+.workflow-step-wrapper:hover .workflow-step-insert {
+    opacity: 1;
+}
+
+.workflow-step-insert:hover {
+    background: rgba(14, 155, 168, 0.06);
+}
+
+/* Add step button */
+.workflow-add-step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    width: 100%;
+    min-height: 2.5rem;
+    margin-top: 0.75rem;
+    border: 1px dashed #d1d5db;
+    border-radius: 0.375rem;
+    background: #ffffff;
+    color: #94a3b8;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.workflow-add-step:hover {
+    border-color: #0ea5e9;
+    background: rgba(14, 155, 168, 0.04);
+    color: #0e9ba8;
+}
+
+/* ============================================================
+   Right: Inspector — border-l, flat
+   ============================================================ */
+.workflow-inspector {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid #e2e8f0;
+    background: #ffffff;
+}
+
+/* Tab row */
+.workflow-tab-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-bottom: 1px solid #e2e8f0;
+    background: #f7f8fa;
+    flex-shrink: 0;
+}
+
+.workflow-tab {
+    min-height: 2.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: #64748b;
+    font: inherit;
+    font-size: 0.71875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.workflow-tab:hover {
+    color: #334155;
+}
+
+.workflow-tab.active {
+    border-bottom-color: #0e9ba8;
+    color: #0e9ba8;
+    background: #ffffff;
+}
+
+/* Inspector body */
+.workflow-inspector-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    align-content: start;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+/* Inspector status row */
+.workflow-inspector-status {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+}
+
+/* Field wrapper */
+.workflow-field {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.workflow-field-label {
+    display: block;
+    font-size: 0.65625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    margin: 0;
+}
+
+/* Input: h-8 px-2 rounded */
+.workflow-input {
+    width: 100%;
+    height: 2rem;
+    padding: 0 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    background: #ffffff;
+    font: inherit;
+    font-size: 0.75rem;
+    color: #0f172a;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.workflow-input:focus {
+    border-color: #0e9ba8;
+    box-shadow: 0 0 0 2px rgba(14, 155, 168, 0.2);
+}
+
+.workflow-input-mono {
+    font-family: "Cascadia Code", "Fira Code", monospace;
+}
+
+/* Select wrapper */
+.workflow-select-wrap {
+    position: relative;
+}
+
+.workflow-select {
+    width: 100%;
+    height: 2rem;
+    padding: 0 1.75rem 0 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    background: #ffffff;
+    font: inherit;
+    font-size: 0.75rem;
+    color: #0f172a;
+    appearance: none;
+    outline: none;
+    cursor: pointer;
+}
+
+.workflow-select:focus {
+    border-color: #0e9ba8;
+    box-shadow: 0 0 0 2px rgba(14, 155, 168, 0.2);
+}
+
+.workflow-select-chevron {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    font-family: "Segoe MDL2 Assets";
+    font-size: 0.65rem;
+    color: #94a3b8;
+}
+
+.workflow-select-chevron::before {
+    content: "\E76C";
+}
+
+/* Textarea */
+.workflow-textarea {
+    width: 100%;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    background: #ffffff;
+    font: inherit;
+    font-size: 0.75rem;
+    color: #0f172a;
+    outline: none;
+    resize: none;
+    min-height: 3rem;
+}
+
+.workflow-textarea:focus {
+    border-color: #0e9ba8;
+    box-shadow: 0 0 0 2px rgba(14, 155, 168, 0.2);
+}
+
+/* Field grid: 2 columns */
+.workflow-field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+/* Divider */
+.workflow-field-divider {
+    border-top: 1px solid #e2e8f0;
+}
+
+/* Toggle list */
+.workflow-toggle-list {
+    display: grid;
+    gap: 0;
+}
+
+.workflow-toggle {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.375rem 0;
+    cursor: pointer;
+}
+
+.workflow-toggle-text {
+    min-width: 0;
+}
+
+.workflow-toggle-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #0f172a;
+}
+
+.workflow-toggle-hint {
+    font-size: 0.6875rem;
+    color: #94a3b8;
+    margin-top: 0.0625rem;
+}
+
+.workflow-toggle-switch {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 1.125rem;
+    border-radius: 999px;
+    border: 1px solid #e2e8f0;
+    background: #e2e8f0;
+    position: relative;
+    transition: background 0.2s, border-color 0.2s;
+    margin-top: 0.125rem;
+}
+
+.workflow-toggle-switch::after {
+    content: "";
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 999px;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+}
+
+.workflow-toggle-switch.on {
+    border-color: #0e9ba8;
+    background: #0e9ba8;
+}
+
+.workflow-toggle-switch.on::after {
+    transform: translateX(0.875rem);
+}
+
+/* Preview card */
+.workflow-preview-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    display: grid;
+    gap: 0.375rem;
+    background: #f7f8fa;
+}
+
+.workflow-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.workflow-preview-info {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    color: #64748b;
+}
+
+.workflow-preview-note {
+    font-size: 0.6875rem;
+    color: #94a3b8;
+}
+
+/* ============================================================
+   Runtime tab styles
+   ============================================================ */
+.workflow-runtime-running {
+    border: 1px solid rgba(22, 163, 74, 0.4);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    background: rgba(22, 163, 74, 0.1);
+}
+
+.workflow-runtime-running-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.workflow-runtime-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #16a34a;
+}
+
+.workflow-runtime-elapsed {
+    font-size: 0.6875rem;
+    font-family: "Cascadia Code", "Fira Code", monospace;
+    color: #64748b;
+}
+
+.workflow-runtime-name {
+    font-size: 0.78125rem;
+    font-weight: 500;
+    color: #0f172a;
+}
+
+.workflow-runtime-sub {
+    font-size: 0.6875rem;
+    color: #64748b;
+}
+
+.workflow-runtime-active {
+    border: 1px solid rgba(14, 155, 168, 0.4);
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    background: rgba(14, 155, 168, 0.06);
+}
+
+.workflow-runtime-active-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.workflow-runtime-active-head span:first-child {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.workflow-runtime-chain {
+    font-family: "Cascadia Code", "Fira Code", monospace;
+    font-size: 0.6875rem;
+    color: #64748b;
+    margin-top: 0.25rem;
+}
+
+.workflow-runtime-progress-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.6875rem;
+    margin-bottom: 0.25rem;
+    color: #64748b;
+}
+
+.workflow-runtime-pct {
+    font-family: "Cascadia Code", "Fira Code", monospace;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.workflow-progress-track {
+    height: 0.5rem;
+    border-radius: 999px;
+    background: #e2e8f0;
+    overflow: hidden;
+}
+
+.workflow-progress-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #0e9ba8;
+    transition: width 0.3s;
+}
+
+.workflow-runtime-event {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    padding: 0.625rem;
+    background: #f7f8fa;
+}
+
+.workflow-runtime-event-time {
+    font-family: "Cascadia Code", "Fira Code", monospace;
+    font-size: 0.6875rem;
+    color: #64748b;
+    margin-bottom: 0.125rem;
+}
+
+.workflow-runtime-event > div:last-child {
+    font-size: 0.75rem;
+    color: #334155;
+}
+
+.workflow-runtime-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.375rem;
+}
+
+/* ============================================================
+   Bottom: Execution History — flat, border-top
+   ============================================================ */
+.workflow-history {
+    background: #ffffff;
+    border-top: 1px solid #e2e8f0;
+    flex-shrink: 0;
+}
+
+.workflow-history-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.workflow-history-header h2 {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #0f172a;
+}
+
+.workflow-history-header .workflow-icon-inline {
+    color: #0e9ba8;
+}
+
+.workflow-history-sub {
+    font-size: 0.6875rem;
+    color: #64748b;
+}
+
+.workflow-history-spacer {
+    flex: 1 1 auto;
+}
+
+.workflow-history-export {
+    min-height: 1.75rem;
+    padding: 0 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    background: #ffffff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.6875rem;
+    cursor: pointer;
+}
+
+.workflow-history-export:hover {
+    background: #f1f5f9;
+}
+
+.workflow-history-toggle {
+    min-height: 1.75rem;
+    padding: 0 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    background: #ffffff;
+    color: #64748b;
+    font: inherit;
+    font-size: 0.6875rem;
+    cursor: pointer;
+}
+
+.workflow-history-toggle:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.workflow-history-scroll {
+    max-height: 200px;
+    overflow: auto;
+}
+
+/* History table */
+.workflow-history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+}
+
+.workflow-history-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.workflow-history-table th {
+    padding: 0.5rem 1rem;
+    font-size: 0.65625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    background: #f7f8fa;
+    border-bottom: 1px solid #e2e8f0;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.workflow-history-table td {
+    padding: 0.375rem 1rem;
+    border-bottom: 1px solid rgba(214, 226, 236, 0.6);
+    font-family: "Cascadia Code", "Fira Code", monospace;
+    font-size: 0.71875rem;
+    color: #0f172a;
+    white-space: nowrap;
+}
+
+.workflow-history-table td:first-child {
+    color: #64748b;
+}
+
+.workflow-history-cell-sans {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif !important;
+}
+
+.workflow-history-table tbody tr:hover td {
+    background: rgba(14, 155, 168, 0.04);
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 1360px) {
+    .workflow-layout {
+        grid-template-columns: 260px minmax(0, 1fr);
+    }
+
+    .workflow-inspector {
+        grid-column: 1 / -1;
+        border-left: 0;
+        border-top: 1px solid #e2e8f0;
+    }
+}
+
+@media (max-width: 980px) {
+    .content.px-4:has(.workflow-fit) {
+        overflow: auto;
+    }
+
+    .workflow-fit {
+        height: auto;
+        min-height: 0;
+        overflow: visible;
+    }
+
+    .workflow-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .workflow-sidebar {
+        border-right: 0;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .workflow-inspector {
+        grid-column: auto;
+    }
+
+    .workflow-field-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .workflow-sidebar-footer {
+        grid-template-columns: 1fr auto auto;
+    }
+}

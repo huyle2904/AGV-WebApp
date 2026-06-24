@@ -1,416 +1,228 @@
-@page "/map"
+﻿@page "/map"
 @implements IDisposable
 @inject PlantStateService State
-@inject AgvApiClient ApiClient
-@inject DemoRoleState RoleState
-@inject IJSRuntime JS
+@inject MapBackgroundService MapBackgroundService
 
 <PageTitle>AGV Monitor</PageTitle>
 
-<section class="ops-monitor">
-    <header class="ops-header">
-        <div class="ops-title-block">
-            <span class="ops-title-icon" aria-hidden="true"></span>
-            <div>
-            <span class="eyebrow">GIÁM SÁT TRỰC TIẾP</span>
-            <h1>AGV Monitor</h1>
-            <p>Theo dõi trạng thái SEER AGV thật. Dữ liệu trống hoặc chưa cấu hình sẽ không bị tự đoán.</p>
-            </div>
-        </div>
-    </header>
-
+<section class="agv-monitor-page">
     @if (!State.IsInitialized)
     {
-        <div class="empty-panel ops-loading">
+        <div class="agv-loading">
             <strong>Đang tải trạng thái AGV</strong>
             <span>Đang chờ API, Worker và telemetry từ robot.</span>
         </div>
     }
     else
     {
-        <section class="ops-kpi-grid">
-            <article class="ops-kpi">
-                <span>Robot</span>
-                <strong>@(SelectedRobot?.Name ?? "Chưa kết nối")</strong>
-                <small>@(SelectedRobot?.RobotId ?? "Chưa có robot")</small>
-                <span class="kpi-icon kpi-robot" aria-hidden="true"></span>
-            </article>
-            <article class="ops-kpi">
-                <span>AGV link</span>
-                <strong>@(SelectedRobot is null ? TranslateConnectivity(State.Health.IntegrationStatus) : TranslateConnectivity(SelectedRobot.Connectivity))</strong>
-                <small>@State.Health.UpdatedAt.ToLocalTime().ToString("HH:mm:ss")</small>
-                <span class="kpi-icon kpi-link" aria-hidden="true"></span>
-            </article>
-            <article class="ops-kpi">
-                <span>Map hiện tại</span>
-                <strong>@(SelectedDetail?.CurrentMap ?? "Chưa báo")</strong>
-                <small>@MapSourceLabel</small>
-                <span class="kpi-icon kpi-map" aria-hidden="true"></span>
-            </article>
-            <article class="ops-kpi">
-                <span>Sẵn sàng lệnh</span>
-                <strong>@CommandReadinessLabel</strong>
-                <small>@CommandReadinessHint</small>
-                <span class="kpi-icon kpi-ready" aria-hidden="true"></span>
-            </article>
-            <article class="ops-kpi connection-card @HealthClass">
-                <span>Integration</span>
-                <strong>@TranslateConnectivity(State.Health.IntegrationStatus)</strong>
-                <small>@State.Health.Message</small>
-                <span class="kpi-icon kpi-alert" aria-hidden="true"></span>
-            </article>
-        </section>
-
-        <section class="ops-layout">
-            <aside class="ops-sidebar">
-                <article class="panel ops-card">
-                    <div class="panel-header">
-                        <h2>Trạng thái robot</h2>
-                        <span class="pill">@State.Robots.Count robot(s)</span>
-                    </div>
-
-                    @if (State.Robots.Count == 0)
+        <div class="agv-monitor-frame">
+            <aside class="agv-robot-panel">
+                <article class="agv-card agv-robot-card">
+                    @if (SelectedRobot is null)
                     {
-                        <div class="empty-panel">
+                        <div class="agv-empty">
                             <strong>Chưa có robot live</strong>
                             <span>Worker chưa đồng bộ robot từ mạng AGV.</span>
                         </div>
                     }
                     else
                     {
-                        <div class="ops-robot-list">
-                            @foreach (var robot in State.Robots)
-                            {
-                                <button type="button"
-                                        class="ops-robot-row @(robot.RobotId == SelectedRobot?.RobotId ? "selected" : null)"
-                                        @onclick="() => SelectRobot(robot.RobotId)">
-                                    <span class="status-dot status-@robot.Connectivity.ToString().ToLowerInvariant()"></span>
-                                    <div>
-                                        <strong>@robot.Name</strong>
-                                        <small>@TranslateRobotMode(robot.Mode) / @robot.BatteryPercent% pin</small>
-                                    </div>
-                                </button>
-                            }
+                        <div class="agv-robot-top">
+                            <div>
+                                <h2>@SelectedRobot.Name</h2>
+                                <span>SEER AMB Series</span>
+                            </div>
+                            <button type="button" class="agv-chip agv-chip-ok">@TranslateRobotMode(SelectedRobot.Mode)</button>
+                        </div>
+                        <div class="agv-battery-row">
+                            <span class="agv-icon agv-icon-battery" aria-hidden="true"></span>
+                            <span>Battery</span>
+                            <strong>@SelectedRobot.BatteryPercent%</strong>
+                        </div>
+                        <div class="agv-battery-track">
+                            <span class="@BatteryBarClass" style="width: @SelectedRobot.BatteryPercent%"></span>
                         </div>
                     }
                 </article>
 
-                <article class="panel ops-card">
-                    <div class="panel-header">
-                        <h2>Tín hiệu an toàn</h2>
-                    </div>
-                    <div class="signal-list">
+                <article class="agv-card agv-status-card">
+                    <h3>STATUS</h3>
+                    <div class="agv-status-list">
                         @foreach (var signal in SafetySignals)
                         {
-                            <div class="signal-row signal-@signal.Kind">
-                                <span class="signal-icon @signal.Icon" aria-hidden="true"></span>
-                                <div>
-                                    <span>@signal.Label</span>
-                                    <strong>@signal.Value</strong>
-                                    @if (!string.IsNullOrWhiteSpace(signal.Detail))
-                                    {
-                                        <small>@signal.Detail</small>
-                                    }
-                                </div>
-                                <span class="signal-check" aria-hidden="true">@SignalStatusGlyph(signal.Kind)</span>
+                            <div class="agv-status-row">
+                                <i class="agv-dot agv-dot-@signal.Kind"></i>
+                                <span>@signal.Label</span>
+                                <strong>@signal.Value</strong>
                             </div>
                         }
                     </div>
                 </article>
+
+                <button type="button" class="agv-warning-summary" @onclick="() => _warningsOpen = true">
+                    <span class="agv-icon agv-icon-bell" aria-hidden="true"></span>
+                    <strong>Warnings</strong>
+                    <span>@ActiveAlarms.Count</span>
+                </button>
+
+                <div class="agv-integration @HealthClass">
+                    <strong>Integration: @TranslateConnectivity(State.Health.IntegrationStatus)</strong>
+                    <span>@State.Health.Message</span>
+                </div>
             </aside>
 
-            <main class="panel ops-map-card">
-                <div class="ops-map-toolbar">
-                    <div>
-                        <h2>Vị trí và lớp map</h2>
-                        <p>@MapLayerDescription</p>
-                    </div>
-                    <div class="toolbar-group">
-                        <button class="icon-button" title="Zoom out" type="button" @onclick="ZoomOut">-</button>
-                        <button class="icon-button" title="Fit map" type="button" @onclick="FitMap">Fit</button>
-                        <button class="icon-button" title="Zoom in" type="button" @onclick="ZoomIn">+</button>
-                        <button class="icon-button fit-button" title="Reset view" type="button" @onclick="FitMap"></button>
-                    </div>
+            <main class="agv-workspace">
+                <div class="agv-route-bar">
+                    <span class="agv-chip"><i class="agv-icon agv-icon-map"></i>@CurrentMapName</span>
+                    <span class="agv-chip agv-chip-ok"><i class="agv-dot agv-dot-good"></i>@(SelectedRobot?.Name ?? "AMB-01") - @RobotOnlineLabel</span>
+                    <span class="agv-chip"><i class="agv-icon agv-icon-battery"></i>@(SelectedRobot?.BatteryPercent.ToString() ?? "--")%</span>
+                    <button type="button" class="agv-chip agv-chip-warn" @onclick="() => _warningsOpen = true">Warnings @ActiveAlarms.Count</button>
+                    <span class="agv-chip agv-chip-route">Route: Draft</span>
                 </div>
 
-                <div class="map-truth-banner @(HasRenderableMapLayer ? "truth-live" : "truth-empty")">
-                    <span class="truth-icon" aria-hidden="true"></span>
-                    <div>
-                    <strong>@MapTruthTitle</strong>
-                    <span>@MapTruthMessage</span>
-                    </div>
-                </div>
-
-                @if (State.Robots.Count == 0)
+                @if (!_alertDismissed)
                 {
-                    <div class="empty-map ops-empty-map">
-                        <strong>Chưa có vị trí robot</strong>
-                        <span>Chỉ vẽ khi nhận được trạng thái robot thật.</span>
+                    <div class="agv-alert-strip">
+                        <span class="agv-icon agv-icon-alert" aria-hidden="true"></span>
+                        <strong>Chưa có route map đã validate</strong>
+                        <span>cần cấu hình lớp map hợp lệ trước khi dùng route command.</span>
+                        <button type="button" @onclick="() => _alertDismissed = true" aria-label="Đóng cảnh báo">x</button>
                     </div>
                 }
-                else
-                {
-                    <MapCanvas Entities="RenderableMapEntities"
-                               Robots="State.Robots"
-                               ShowStations="true"
-                               ShowPaths="true"
-                               ShowZones="true"
-                               ShowLabels="_showMapLabels"
-                               Zoom="_mapZoom"
-                               SelectedRobotId="SelectedRobot?.RobotId" />
-                }
 
-                <div class="map-layer-controls">
-                    <label>
-                        <input type="checkbox" @bind="_showRawAgvMapRecords" />
-                        Hiện station thô từ AGV
-                    </label>
-                    <label>
-                        <input type="checkbox" @bind="_showMapLabels" />
-                        Hiện nhãn
-                    </label>
-                </div>
+                <section class="agv-map-section">
+                    <div class="agv-map-toolbar" aria-label="Map tools">
+                        <button title="Zoom out" type="button" @onclick="ZoomOut">-</button>
+                        <button title="Fit map" type="button" @onclick="FitMap">Fit</button>
+                        <button title="Zoom in" type="button" @onclick="ZoomIn">+</button>
+                        <button title="Fullscreen" type="button" @onclick="FitMap">[]</button>
+                    </div>
 
-                @if (_showRawAgvMapRecords && RawStations.Count > 0)
-                {
-                    <div class="raw-data-table">
-                        <div class="panel-header">
-                            <h3>Station thô từ AGV map</h3>
-                            <span class="pill">@RawStations.Count</span>
-                        </div>
-                        <div class="table-shell">
-                            <table class="app-table">
-                                <thead>
+                    <div class="agv-map-canvas-wrap">
+                        @if (_backgroundMap is null && State.Robots.Count == 0 && RawStations.Count == 0)
+                        {
+                            <div class="agv-empty-map">
+                                <strong>Chưa có dữ liệu bản đồ</strong>
+                                <span>Cần file map `.smap` hoặc station/robot từ hệ thống.</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <MapCanvas BackgroundMap="_backgroundMap"
+                                       Entities="RenderableMapEntities"
+                                       Robots="State.Robots"
+                                       ShowStations="true"
+                                       ShowPaths="false"
+                                       ShowZones="false"
+                                       ShowLabels="_showMapLabels"
+                                       Zoom="_mapZoom"
+                                       SelectedRobotId="SelectedRobot?.RobotId" />
+                        }
+                    </div>
+
+                    <div class="agv-layer-controls">
+                        <label>
+                            <input type="checkbox" @bind="_showRawAgvMapRecords" />
+                            Hiển thị station
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_showMapLabels" />
+                            Hiện nhãn
+                        </label>
+                    </div>
+                </section>
+
+                <section class="agv-station-table @(_stationsExpanded ? "expanded" : null)">
+                    <header>
+                        <strong>STATIONS - @RawStations.Count RECORDS</strong>
+                        <button type="button" @onclick="() => _stationsExpanded = !_stationsExpanded">
+                            @(_stationsExpanded ? "Collapse" : "Expand")
+                        </button>
+                    </header>
+                    <div class="agv-table-scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Station</th>
+                                    <th>Type</th>
+                                    <th>X</th>
+                                    <th>Y</th>
+                                    <th>Theta</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (RawStations.Count == 0)
+                                {
                                     <tr>
-                                        <th>ID</th>
-                                        <th>Loại</th>
-                                        <th>X</th>
-                                        <th>Y</th>
-                                        <th>Hướng</th>
+                                        <td colspan="6">Chưa có station record thô từ AGV.</td>
                                     </tr>
-                                </thead>
-                                <tbody>
+                                }
+                                else
+                                {
                                     @foreach (var station in RawStations)
                                     {
                                         <tr>
-                                            <td>@station.EntityId</td>
+                                            <td>@station.Name</td>
                                             <td>@GetProperty(station, "seerType")</td>
                                             <td>@station.X.ToString("0.###")</td>
                                             <td>@station.Y.ToString("0.###")</td>
                                             <td>@GetProperty(station, "headingRad")</td>
+                                            <td><span class="agv-raw-dot"></span>Raw</td>
                                         </tr>
                                     }
-                                </tbody>
-                            </table>
-                        </div>
-                        <p class="helper-text">Đây là record do AGV báo về. NewAGV chưa xem chúng là điểm đến hợp lệ.</p>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        @if (_warningsOpen)
+        {
+            <div class="agv-drawer-backdrop" @onclick="() => _warningsOpen = false"></div>
+            <aside class="agv-warnings-drawer">
+                <header>
+                    <h2>Cảnh báo</h2>
+                    <button type="button" @onclick="() => _warningsOpen = false" aria-label="Dong">x</button>
+                </header>
+                @if (ActiveAlarms.Count == 0)
+                {
+                    <div class="agv-empty">
+                        <strong>Không có cảnh báo chi tiết</strong>
+                        <span>AGV chưa báo alarm record.</span>
                     </div>
                 }
-            </main>
-
-            <aside class="ops-sidebar">
-                <article class="panel ops-card">
-                    <div class="panel-header">
-                        <h2>Bảng lệnh</h2>
-                        <span class="pill">@RoleState.CurrentRole</span>
+                else
+                {
+                    <div class="agv-warning-list">
+                        @foreach (var alarm in ActiveAlarms)
+                        {
+                            <article class="agv-warning-card alarm-@alarm.SeverityClass">
+                                <div>
+                                    <span>@TranslateAlarmSeverity(alarm.Severity)</span>
+                                    <time>@State.Health.UpdatedAt.ToLocalTime().ToString("HH:mm:ss")</time>
+                                </div>
+                                <strong>@alarm.Code</strong>
+                                <p>@(alarm.Description ?? alarm.Describe ?? "Không có mô tả")</p>
+                            </article>
+                        }
                     </div>
-
-                    @if (SelectedRobot is null)
-                    {
-                        <div class="empty-panel">
-                            <strong>Chưa chọn robot</strong>
-                            <span>Lệnh bị khóa cho đến khi robot online.</span>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="teleop-panel">
-                            <div class="teleop-header">
-                                <strong>Teleop (WASD)</strong>
-                                <span class="pill @(_teleopActive ? "pill-active" : "pill-inactive")">
-                                    @(_teleopActive ? "Đang bật" : "Tắt")
-                                </span>
-                            </div>
-
-                            <div class="wasd-grid">
-                                <button type="button" class="wasd-btn" disabled="@(!_teleopActive)">Q</button>
-                                <button type="button" class="wasd-btn wasd-w" disabled="@(!_teleopActive)">W</button>
-                                <button type="button" class="wasd-btn" disabled="@(!_teleopActive)">E</button>
-                                <button type="button" class="wasd-btn wasd-a" disabled="@(!_teleopActive)">A</button>
-                                <button type="button" class="wasd-btn wasd-s" disabled="@(!_teleopActive)">S</button>
-                                <button type="button" class="wasd-btn wasd-d" disabled="@(!_teleopActive)">D</button>
-                            </div>
-                            <div class="teleop-controls">
-                                <label class="teleop-speed">
-                                    <span>Tốc độ: @_teleopSpeed.ToString("0.0")</span>
-                                    <input type="range" min="0.1" max="1.0" step="0.1" @bind="_teleopSpeed" />
-                                </label>
-                                <div class="teleop-actions">
-                                    <button type="button" class="primary-button teleop-toggle" @onclick="ToggleTeleop">
-                                        @(_teleopActive ? "Tắt Teleop" : "Bật Teleop")
-                                    </button>
-                                    <button type="button" class="danger-button teleop-estop" @onclick="EmergencyStop" disabled="@(!_teleopActive)">
-                                        E-STOP
-                                    </button>
-                                </div>
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(_teleopStatusMessage))
-                            {
-                                <p class="inline-status">@_teleopStatusMessage</p>
-                            }
-                            <p class="helper-text @(_teleopActive ? "text-warn" : "")">
-                                @(_teleopActive
-                                    ? "WASD di chuyển, Q/E sang ngang, Space = dừng khẩn"
-                                    : "Bật Teleop để điều khiển robot bằng bàn phím")
-                            </p>
-                        </div>
-
-                        <div class="relocate-panel">
-                            <strong>Relocation</strong>
-                            @if (SelectedRobot is not null)
-                            {
-                                <div class="current-pose">
-                                    <span>Tọa độ hiện tại:</span>
-                                    <strong>X=@SelectedRobot.Pose.X.ToString("0.###")</strong>
-                                    <strong>Y=@SelectedRobot.Pose.Y.ToString("0.###")</strong>
-                                    <strong>Góc=@SelectedRobot.Pose.HeadingDegrees.ToString("0.#")°</strong>
-                                </div>
-                            }
-                            <p class="helper-text">Nhập tọa độ thực tế để định vị lại robot (tự động điền tọa độ hiện tại).</p>
-                            <div class="relocate-inputs">
-                                <label class="relocate-field">
-                                    <span>X</span>
-                                    <input type="number" @bind="_relocateX" step="0.1" lang="en" />
-                                </label>
-                                <label class="relocate-field">
-                                    <span>Y</span>
-                                    <input type="number" @bind="_relocateY" step="0.1" lang="en" />
-                                </label>
-                                <label class="relocate-field">
-                                    <span>Góc</span>
-                                    <input type="number" @bind="_relocateAngle" step="1" lang="en" />
-                                </label>
-                                <button type="button" class="primary-button relocate-btn" @onclick="RelocateAsync" disabled="@(SelectedRobot is null)">
-                                    Relocate
-                                </button>
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(_relocateStatusMessage))
-                            {
-                                <p class="inline-status">@_relocateStatusMessage</p>
-                            }
-                        </div>
-
-                        <EditForm Model="_request" OnValidSubmit="DispatchAsync" class="command-form">
-                            <label>
-                                <span>Lệnh điều khiển</span>
-                                <select @bind="_selectedCommand">
-                                    <option value="@MissionCommandType.Pause">Pause mission</option>
-                                    <option value="@MissionCommandType.Resume">Resume mission</option>
-                                    <option value="@MissionCommandType.Cancel">Cancel mission</option>
-                                    <option value="@MissionCommandType.GoToStation">Go to station</option>
-                                </select>
-                            </label>
-
-                            @if (_selectedCommand == MissionCommandType.GoToStation)
-                            {
-                                <label>
-                                    <span>Station đích</span>
-                                    <select @bind="_selectedStationId">
-                                        <option value="">-- Chọn station --</option>
-                                        @foreach (var station in AvailableStations)
-                                        {
-                                            <option value="@station.EntityId">@station.Name (@station.EntityId)</option>
-                                        }
-                                    </select>
-                                </label>
-                            }
-
-                            <label class="checkbox-row">
-                                <input type="checkbox" @bind="_request.Confirmed" />
-                                <span>Xác nhận gửi lệnh</span>
-                            </label>
-
-                            @if (PreflightReasons.Count > 0)
-                            {
-                                <div class="preflight-panel">
-                                    <strong>Lệnh bị khóa</strong>
-                                    @foreach (var reason in PreflightReasons)
-                                    {
-                                        <span>@reason</span>
-                                    }
-                                </div>
-                            }
-
-                            <button class="primary-button" type="submit" disabled="@IsDispatchDisabled">
-                                <span class="send-icon" aria-hidden="true"></span>
-                                Gửi lệnh
-                            </button>
-                        </EditForm>
-                    }
-
-                    @if (!string.IsNullOrWhiteSpace(_statusMessage))
-                    {
-                        <p class="inline-status">@_statusMessage</p>
-                    }
-                </article>
-
-                <article class="panel ops-card">
-                    <div class="panel-header">
-                        <h2>Cảnh báo</h2>
-                        <span class="pill">@ActiveAlarms.Count</span>
-                    </div>
-
-                    @if (ActiveAlarms.Count == 0)
-                    {
-                        <div class="empty-panel">
-                            <strong>Không có cảnh báo chi tiết</strong>
-                            <span>AGV chưa báo alarm record.</span>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="alarm-list ops-alarm-list">
-                            @foreach (var alarm in ActiveAlarms.Take(5))
-                            {
-                                <div class="alarm-row alarm-@alarm.SeverityClass">
-                                    <div class="alarm-heading">
-                                        <span class="alarm-severity">@TranslateAlarmSeverity(alarm.Severity)</span>
-                                        <time>@State.Health.UpdatedAt.ToLocalTime().ToString("HH:mm:ss")</time>
-                                    </div>
-                                    <strong>@alarm.Code</strong>
-                                    <span>@(alarm.Description ?? alarm.Describe ?? "Không có mô tả")</span>
-                                </div>
-                            }
-                        </div>
-                        <button type="button" class="text-button">Xem tất cả cảnh báo <span aria-hidden="true">&gt;</span></button>
-                    }
-                </article>
+                }
             </aside>
-        </section>
+        }
     }
 </section>
-
 @code {
     private string? _selectedRobotId;
-    private bool _showRawAgvMapRecords;
+    private MapBackgroundDefinition? _backgroundMap;
+    private bool _showRawAgvMapRecords = true;
     private bool _showMapLabels = true;
+    private bool _stationsExpanded;
+    private bool _warningsOpen;
+    private bool _alertDismissed;
     private double _mapZoom = 1;
-    private string? _statusMessage;
-    private MissionCommandType _selectedCommand = MissionCommandType.Pause;
-    private MissionCommandRequest _request = new(string.Empty, MissionCommandType.Pause, null, null, null, true);
-    private double _relocateX;
-    private double _relocateY;
-    private double _relocateAngle;
-    private string? _relocateStatusMessage;
-    private string? _selectedStationId;
-    private bool _teleopActive;
-    private double _teleopSpeed = 0.3;
-    private double _teleopVx;
-    private double _teleopVy;
-    private double _teleopAz;
-    private string? _teleopStatusMessage;
-    private Timer? _teleopTimer;
-    private DotNetObjectReference<Map>? _dotNetRef;
 
     private RobotSummary? SelectedRobot => State.Robots.FirstOrDefault(robot => robot.RobotId == _selectedRobotId) ?? State.Robots.FirstOrDefault();
 
@@ -423,18 +235,24 @@
             .OrderBy(entity => entity.Name)
             .ToList();
 
-    private IReadOnlyList<MapEntity> AvailableStations =>
-        State.MapEntities
-            .Where(entity => entity.Type == MapEntityType.Station)
-            .OrderBy(entity => entity.Name)
-            .ToList();
-
     private IReadOnlyList<MapEntity> RenderableMapEntities =>
         _showRawAgvMapRecords
             ? RawStations
             : [];
 
     private bool HasRenderableMapLayer => RenderableMapEntities.Count > 0;
+
+    private string CurrentMapName => SelectedDetail?.CurrentMap ?? _backgroundMap?.Name ?? "LAB_16062026";
+
+    private string RobotOnlineLabel => SelectedRobot is null ? "Offline" : TranslateConnectivity(SelectedRobot.Connectivity);
+
+    private string BatteryBarClass => SelectedRobot?.BatteryPercent switch
+    {
+        null => "agv-battery-fill",
+        < 20 => "agv-battery-fill agv-battery-low",
+        < 40 => "agv-battery-fill agv-battery-warn",
+        _ => "agv-battery-fill"
+    };
 
     private string MapSourceLabel =>
         RawStations.Count == 0
@@ -463,7 +281,7 @@
 
     private string CommandReadinessHint =>
         PreflightReasons.Count == 0
-            ? "Chỉ Pause, Resume, Cancel"
+            ? "Dùng trang Commands để gửi lệnh"
             : PreflightReasons[0];
 
     private string HealthClass => State.Health.IntegrationStatus switch
@@ -472,11 +290,6 @@
         ConnectivityStatus.Degraded => "health-degraded",
         _ => "health-offline"
     };
-
-    private bool IsDispatchDisabled =>
-        SelectedRobot is null ||
-        !_request.Confirmed ||
-        PreflightReasons.Count > 0;
 
     private IReadOnlyList<string> PreflightReasons => BuildPreflightReasons();
 
@@ -495,137 +308,14 @@
     {
         State.Changed += OnStateChanged;
         await State.EnsureInitializedAsync();
+        _backgroundMap = await MapBackgroundService.GetAsync();
         EnsureSelection();
-    }
-
-    private async Task DispatchAsync()
-    {
-        if (SelectedRobot is null)
-        {
-            _statusMessage = "Chưa chọn robot.";
-            return;
-        }
-
-        if (IsDispatchDisabled)
-        {
-            _statusMessage = PreflightReasons.Count == 0
-                ? "Gửi lệnh đang bị khóa."
-                : string.Join(" ", PreflightReasons);
-            return;
-        }
-
-        if (_selectedCommand == MissionCommandType.GoToStation && string.IsNullOrWhiteSpace(_selectedStationId))
-        {
-            _statusMessage = "Chưa chọn station đích.";
-            return;
-        }
-
-        var request = _request with
-        {
-            RobotId = SelectedRobot.RobotId,
-            CommandType = _selectedCommand,
-            TargetEntityId = _selectedCommand == MissionCommandType.GoToStation ? _selectedStationId : null,
-            VelocityX = null,
-            VelocityY = null
-        };
-
-        var result = await ApiClient.DispatchAsync(request, RoleState.CurrentRole);
-        _statusMessage = result.Message;
-        await State.RefreshAuditAsync();
-    }
-
-    private async Task RelocateAsync()
-    {
-        if (SelectedRobot is null)
-        {
-            _relocateStatusMessage = "Chưa chọn robot.";
-            return;
-        }
-
-        var request = new SeerRelocationRequest(_relocateX, _relocateY, _relocateAngle);
-        var result = await ApiClient.RelocateAsync(request, RoleState.CurrentRole);
-        _relocateStatusMessage = result.Message;
-    }
-
-    private async Task ToggleTeleop()
-    {
-        _teleopActive = !_teleopActive;
-        if (_teleopActive)
-        {
-            _teleopStatusMessage = "Đã bật teleop. Dùng WASD để điều khiển.";
-            _dotNetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("teleop.start", _dotNetRef);
-        }
-        else
-        {
-            await StopTeleopAsync();
-        }
-    }
-
-    private async Task EmergencyStop()
-    {
-        await StopTeleopAsync();
-        _teleopStatusMessage = "E-STOP đã kích hoạt. Robot đã dừng.";
-    }
-
-    private async Task StopTeleopAsync()
-    {
-        _teleopActive = false;
-        _teleopTimer?.Dispose();
-        _teleopTimer = null;
-        await JS.InvokeVoidAsync("teleop.stop");
-        _dotNetRef?.Dispose();
-        _dotNetRef = null;
-        await SendTeleopCommand(0, 0, 0);
-    }
-
-    [JSInvokable]
-    public async Task OnTeleopVelocity(double vx, double vy, double az)
-    {
-        _teleopVx = vx * _teleopSpeed;
-        _teleopVy = vy * _teleopSpeed;
-        _teleopAz = az * _teleopSpeed;
-
-        if (vx == 0 && vy == 0 && az == 0)
-        {
-            _teleopTimer?.Dispose();
-            _teleopTimer = null;
-            await SendTeleopCommand(0, 0, 0);
-        }
-        else if (_teleopTimer is null)
-        {
-            _teleopTimer = new Timer(async _ =>
-            {
-                await SendTeleopCommand(_teleopVx, _teleopVy, _teleopAz);
-            }, null, 0, 200);
-        }
-    }
-
-    private async Task SendTeleopCommand(double vx, double vy, double az)
-    {
-        try
-        {
-            var request = new TeleopRequest(vx, vy, az);
-            await ApiClient.TeleopDriveAsync(request, RoleState.CurrentRole);
-        }
-        catch
-        {
-        }
     }
 
     private void SelectRobot(string robotId)
     {
         _selectedRobotId = robotId;
-        _statusMessage = null;
-        _relocateStatusMessage = null;
         EnsureSelection();
-        var pose = SelectedRobot?.Pose;
-        if (pose is not null)
-        {
-            _relocateX = pose.X;
-            _relocateY = pose.Y;
-            _relocateAngle = pose.HeadingDegrees;
-        }
     }
 
     private void ZoomIn() => _mapZoom = Math.Min(2.2, _mapZoom + 0.2);
@@ -639,18 +329,7 @@
         if (State.Robots.Count > 0 && !State.Robots.Any(robot => robot.RobotId == _selectedRobotId))
         {
             _selectedRobotId = State.Robots[0].RobotId;
-            var pose = SelectedRobot?.Pose;
-            if (pose is not null)
-            {
-                _relocateX = pose.X;
-                _relocateY = pose.Y;
-                _relocateAngle = pose.HeadingDegrees;
-            }
         }
-
-        _request.RobotId = _selectedRobotId ?? string.Empty;
-        _request.CommandType = _selectedCommand;
-        _request.TargetEntityId = null;
     }
 
     private IReadOnlyList<string> BuildPreflightReasons()
@@ -663,7 +342,7 @@
         var reasons = new List<string>();
         if (SelectedRobot.Connectivity != ConnectivityStatus.Online)
         {
-            reasons.Add("Robot TCP link chưa Online.");
+            reasons.Add("Robot TCP link chÆ°a Online.");
         }
 
         return reasons;
@@ -678,20 +357,23 @@
                 new("Robot link", "Offline", "bad", "Chưa có robot live.", "signal-link"),
                 new("Battery", "Chưa báo", "neutral", null, "signal-battery"),
                 new("E-stop", "Chưa báo", "neutral", null, "signal-estop"),
-                new("Localization", "Chưa báo", "neutral", null, "signal-location")
+                new("Localization", "Chưa báo", "neutral", null, "signal-location"),
+                new("Control owner", "Chưa báo", "neutral", null, "signal-owner")
             ];
         }
 
         var detail = SelectedDetail;
         var emergency = detail?.Estop?.Emergency == true || detail?.Estop?.DriverEmergency == true || detail?.Estop?.SoftEmergency == true;
         var localizationReady = detail?.Localization?.ReadyForNavigation == true;
+        var lockedByOtherController = detail?.ControlOwner?.Locked == true;
 
         return
         [
             new("Robot link", TranslateConnectivity(SelectedRobot.Connectivity), SelectedRobot.Connectivity == ConnectivityStatus.Online ? "good" : "bad", SelectedRobot.LastUpdated.ToLocalTime().ToString("HH:mm:ss"), "signal-link"),
             new("Battery", $"{SelectedRobot.BatteryPercent}%", SelectedRobot.BatteryPercent <= 20 ? "warn" : "good", FormatBatteryDetail(detail), "signal-battery"),
             new("E-stop", emergency ? "Active" : "Clear", emergency ? "bad" : "good", FormatEstopDetail(detail), "signal-estop"),
-            new("Localization", detail?.Localization?.StatusLabel ?? "Chưa báo", localizationReady ? "good" : "warn", FormatPercent(detail?.Localization?.Confidence), "signal-location")
+            new("Localization", detail?.Localization?.StatusLabel ?? "Chưa báo", localizationReady ? "good" : "warn", FormatPercent(detail?.Localization?.Confidence), "signal-location"),
+            new("Control owner", lockedByOtherController ? "Locked" : "Clear", lockedByOtherController ? "warn" : "good", FormatControlOwner(detail), "signal-owner")
         ];
     }
 
@@ -705,8 +387,6 @@
     public void Dispose()
     {
         State.Changed -= OnStateChanged;
-        _teleopTimer?.Dispose();
-        _dotNetRef?.Dispose();
     }
 
     private static string GetProperty(MapEntity entity, string key)
@@ -785,3 +465,5 @@
             => new(severity, severityClass, item.Code, item.Description, item.Describe);
     }
 }
+
+

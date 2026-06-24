@@ -1,5 +1,7 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 @inject DemoRoleState RoleState
+@inject NavigationManager Navigation
 
 <div class="page @(IsSidebarCollapsed ? "sidebar-collapsed" : null)">
     <div class="sidebar">
@@ -9,8 +11,8 @@
     <main>
         <div class="top-row px-4">
             <div class="topbar-brand">
-                <span class="topbar-title">SEER AGV Control</span>
-                <span class="topbar-subtitle">Single-site operations console</span>
+                <span class="topbar-title">IDEA AGV CONTROL</span>
+                <span class="topbar-subtitle">@CurrentPageTitle</span>
             </div>
             <div class="topbar-actions">
                 <label class="role-switcher">
@@ -22,7 +24,7 @@
                         }
                     </select>
                 </label>
-                <button type="button" class="user-avatar" title="Tài khoản operator" aria-label="Tài khoản operator"></button>
+                <button type="button" class="user-avatar" title="Tai khoan operator" aria-label="Tai khoan operator"></button>
             </div>
         </div>
 
@@ -41,6 +43,13 @@
 @code {
     private bool IsSidebarCollapsed { get; set; }
 
+    private string CurrentPageTitle => GetPageTitle();
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
     private Task SetSidebarCollapsed(bool isCollapsed)
     {
         IsSidebarCollapsed = isCollapsed;
@@ -53,5 +62,29 @@
         {
             RoleState.SetRole(role);
         }
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
+        => InvokeAsync(StateHasChanged);
+
+    private string GetPageTitle()
+    {
+        var relative = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/').ToLowerInvariant();
+        return relative switch
+        {
+            "" => "Trang chu",
+            "map" => "AGV Monitor",
+            "commands" => "Lenh",
+            "taskchains" => "TaskChain",
+            "workflow" => "Workflow",
+            "configuration" => "Cau hinh",
+            "audit" => "Nhat ky",
+            _ => "AGV Monitor"
+        };
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }

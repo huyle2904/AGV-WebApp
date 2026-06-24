@@ -10,6 +10,15 @@ obj/
 ## Logs
 *.log
 *.err.log
+artifacts/
+logs/
+*.binlog
+
+## Local AI caches / session data
+.codex_backup/
+.codex/sqlite/
+.claude/
+AI_SESSION_HANDOFF.md
 
 ## Visual Studio
 .vs/

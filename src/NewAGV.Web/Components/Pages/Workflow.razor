@@ -1,0 +1,880 @@
+﻿@page "/workflow"
+@using System.Net.Http
+@inject AgvApiClient ApiClient
+@inject DemoRoleState RoleState
+@inject TelemetryClientService TelemetryClient
+@implements IDisposable
+
+<PageTitle>Workflow</PageTitle>
+
+<section class="workflow-fit">
+    <div class="workflow-page">
+        <section class="workflow-topbar">
+            <div class="workflow-topbar-controls">
+                <div class="workflow-chip-row">
+                    <span class="workflow-chip workflow-chip-primary"><i data-lucide="bot" class="workflow-chip-icon" aria-hidden="true"></i><span>Robot: @(_selectedRobotId ?? "None")</span></span>
+                    <span class="workflow-chip workflow-chip-wide"><i data-lucide="workflow" class="workflow-chip-icon" aria-hidden="true"></i><span class="workflow-chip-label">Workflow:</span><strong>@(_selectedWorkflow?.Name ?? "None")</strong></span>
+                    <span class="workflow-chip @GetWorkflowStateChipClass()"><i data-lucide="@GetWorkflowStateIcon()" class="workflow-chip-icon" aria-hidden="true"></i><span>@GetWorkflowStateLabel()</span></span>
+                    <span class="workflow-chip workflow-chip-muted"><i data-lucide="list-ordered" class="workflow-chip-icon" aria-hidden="true"></i><span>@(_selectedWorkflow?.Steps.Count ?? 0) steps</span></span>
+                    <span class="workflow-chip @(_isDirty ? "workflow-chip-warn" : "workflow-chip-ok")"><i data-lucide="@(_isDirty ? "circle-alert" : "clock")" class="workflow-chip-icon" aria-hidden="true"></i><span>@GetSaveStateLabel()</span></span>
+                </div>
+
+                <div class="workflow-toolbar-actions">
+                    <button type="button" class="workflow-toolbar-button" @onclick="SaveAsync" disabled="@(!_canEdit || _isBusy)"><i data-lucide="save" class="workflow-button-icon" aria-hidden="true"></i><span>Save</span></button>
+                    <button type="button" class="workflow-toolbar-button" @onclick="ValidateAsync" disabled="@(!_canEdit || _isBusy)"><i data-lucide="shield-check" class="workflow-button-icon" aria-hidden="true"></i><span>Validate</span></button>
+                    <span class="workflow-toolbar-divider"></span>
+                    <button type="button" class="workflow-toolbar-button workflow-toolbar-button-success" @onclick="RunAsync" disabled="@(!CanRun)"><i data-lucide="play" class="workflow-button-icon" aria-hidden="true"></i><span>Run</span></button>
+                    <button type="button" class="workflow-toolbar-button workflow-toolbar-button-warning" @onclick="PauseAsync" disabled="@(!CanPause)"><i data-lucide="pause" class="workflow-button-icon" aria-hidden="true"></i><span>Pause</span></button>
+                    <button type="button" class="workflow-toolbar-button" @onclick="ResumeAsync" disabled="@(!CanResume)"><i data-lucide="rotate-ccw" class="workflow-button-icon" aria-hidden="true"></i><span>Resume</span></button>
+                    <button type="button" class="workflow-toolbar-button workflow-toolbar-button-danger" @onclick="CancelAsync" disabled="@(!CanCancel)"><i data-lucide="square" class="workflow-button-icon" aria-hidden="true"></i><span>Cancel</span></button>
+                </div>
+            </div>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <div class="workflow-validation-strip">
+                <div class="workflow-validation-text"><strong>Workflow notice.</strong> @_errorMessage</div>
+            </div>
+        }
+
+        <main class="workflow-workspace">
+            <div class="workflow-layout">
+                <aside class="workflow-sidebar">
+                    <div class="workflow-sidebar-header">
+                        <div class="workflow-sidebar-title">
+                            <h2>Workflows</h2>
+                            <span>@_workflows.Count total</span>
+                        </div>
+                        <label class="workflow-search">
+                            <input placeholder="Search workflows..." @bind="_searchText" @bind:event="oninput" />
+                        </label>
+                    </div>
+
+                    <div class="workflow-catalog-list">
+                        @if (_isLoading)
+                        {
+                            <div class="workflow-empty-state">Loading workflows...</div>
+                        }
+                        else if (FilteredWorkflows.Count == 0)
+                        {
+                            <div class="workflow-empty-state">No workflows yet.</div>
+                        }
+                        else
+                        {
+                            @foreach (var workflow in FilteredWorkflows)
+                            {
+                                <button type="button" class="workflow-catalog-item @(workflow.Id == _selectedWorkflow?.Id ? "selected" : null)" @onclick="() => SelectWorkflowAsync(workflow.Id)">
+                                    <div class="workflow-catalog-main">
+                                        <div class="workflow-catalog-name">@workflow.Name</div>
+                                        <div class="workflow-catalog-meta">v@workflow.Version Â· @workflow.StepCount steps Â· @FormatUpdated(workflow.UpdatedAt)</div>
+                                    </div>
+                                    <span class="workflow-status-chip @(workflow.IsPublished ? "workflow-status-ready" : "workflow-status-draft")">@(workflow.IsPublished ? "Published" : "Draft")</span>
+                                </button>
+                            }
+                        }
+                    </div>
+
+                    <div class="workflow-sidebar-footer">
+                        <button type="button" class="workflow-footer-btn workflow-footer-btn-primary" @onclick="CreateWorkflowAsync" disabled="@_isBusy">New</button>
+                        <button type="button" class="workflow-footer-btn" @onclick="DuplicateWorkflowAsync" disabled="@(!_canEdit || _isBusy)">Duplicate</button>
+                        <button type="button" class="workflow-footer-btn workflow-footer-btn-danger" @onclick="DeleteWorkflowAsync" disabled="@(!_canEdit || _isBusy)">Delete</button>
+                    </div>
+                </aside>
+
+                <section class="workflow-editor">
+                    @if (_selectedWorkflow is null)
+                    {
+                        <div class="workflow-empty-state">Select a workflow to view details.</div>
+                    }
+                    else
+                    {
+                        <div class="workflow-editor-header">
+                            <div class="workflow-editor-title-group">
+                                <div class="workflow-editor-title">
+                                    <h2>@_selectedWorkflow.Name</h2>
+                                    <span class="workflow-mini-chip">v@_selectedWorkflow.Version</span>
+                                </div>
+                                <p class="workflow-editor-desc">@(!string.IsNullOrWhiteSpace(_selectedWorkflow.Description) ? _selectedWorkflow.Description : "No description yet.")</p>
+                            </div>
+                            <div class="workflow-editor-meta">
+                                <div>Assigned: <strong>@(string.IsNullOrWhiteSpace(_selectedWorkflow.AssignedRobotId) ? "Any robot" : _selectedWorkflow.AssignedRobotId)</strong></div>
+                                <div>TaskChains from API: @_taskChains.Count</div>
+                            </div>
+                        </div>
+
+                        @if (_validationResult is not null)
+                        {
+                            <div class="workflow-validation-strip">
+                                <div class="workflow-validation-text"><strong>@GetValidationSummary()</strong> @GetValidationMessage()</div>
+                                <button type="button" class="workflow-validation-btn" @onclick="ValidateAsync" disabled="@_isBusy">Re-validate</button>
+                            </div>
+                        }
+
+                        <div class="workflow-canvas">
+                            @if (_selectedWorkflow.Steps.Count == 0)
+                            {
+                                <div class="workflow-empty-state">No steps yet. Add a TaskChain step to start building this workflow.</div>
+                            }
+                            else
+                            {
+                                @foreach (var step in _selectedWorkflow.Steps.OrderBy(step => step.Sequence))
+                                {
+                                    <button type="button" class="workflow-step-card @(step.Id == _selectedStepId ? "selected" : null)" @onclick="() => SelectStep(step.Id)">
+                                        <div class="workflow-step-index">@step.Sequence.ToString("00")</div>
+                                        <div class="workflow-step-body">
+                                            <div class="workflow-step-top">
+                                                <span class="workflow-step-name">@(string.IsNullOrWhiteSpace(step.DisplayName) ? step.TaskChainName : step.DisplayName)</span>
+                                                <span class="workflow-status-chip workflow-status-ready">@step.StepType</span>
+                                            </div>
+                                            <div class="workflow-step-meta">@step.TaskChainName Â· timeout @step.TimeoutSeconds s Â· retry x@step.RetryCount Â· @step.FailurePolicy</div>
+                                        </div>
+                                    </button>
+                                }
+                            }
+
+                            <button type="button" class="workflow-add-step" @onclick="AddStep" disabled="@(!_canEdit || _isBusy)">Add TaskChain step</button>
+                        </div>
+                    }
+                </section>
+
+                <aside class="workflow-inspector">
+                    <div class="workflow-tab-row">
+                        <button type="button" class="workflow-tab @(_selectedTab == "Workflow" ? "active" : null)" @onclick='@(() => _selectedTab = "Workflow")'>Workflow</button>
+                        <button type="button" class="workflow-tab @(_selectedTab == "Step" ? "active" : null)" @onclick='@(() => _selectedTab = "Step")'>Step</button>
+                        <button type="button" class="workflow-tab @(_selectedTab == "Runtime" ? "active" : null)" @onclick='@(() => _selectedTab = "Runtime")'>Runtime</button>
+                    </div>
+
+                    <div class="workflow-inspector-body">
+                        @if (_selectedWorkflow is null)
+                        {
+                            <div class="workflow-empty-state">No workflow selected.</div>
+                        }
+                        else if (_selectedTab == "Workflow")
+                        {
+                            <div class="workflow-form-panel">
+                                <div class="workflow-field">
+                                    <label class="workflow-field-label">Workflow Name</label>
+                                    <input class="workflow-input workflow-input-hero" @bind="_selectedWorkflow.Name" @bind:after="MarkDirty" />
+                                </div>
+                                <div class="workflow-field">
+                                    <label class="workflow-field-label">Description</label>
+                                    <textarea class="workflow-textarea workflow-textarea-hero" rows="4" @bind="_selectedWorkflow.Description" @bind:after="MarkDirty"></textarea>
+                                </div>
+                                <div class="workflow-field-grid workflow-field-grid-tight">
+                                    <div class="workflow-field">
+                                        <label class="workflow-field-label">Assigned Robot</label>
+                                        <div class="workflow-select-wrap">
+                                            <select class="workflow-select workflow-select-hero" @bind="_selectedWorkflow.AssignedRobotId" @bind:after="AssignedRobotChangedAsync">
+                                                <option value="">Any robot</option>
+                                                @foreach (var robot in _robots)
+                                                {
+                                                    <option value="@robot.RobotId">@robot.RobotId</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="workflow-field">
+                                        <label class="workflow-field-label">Execution Mode</label>
+                                        <div class="workflow-select-wrap">
+                                            <select class="workflow-select workflow-select-hero" @bind="_selectedWorkflow.ExecutionMode" @bind:after="MarkDirty">
+                                                <option value="Sequential">Sequential</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="workflow-field-divider"></div>
+                                <div class="workflow-field">
+                                    <label class="workflow-field-label">Behavior</label>
+                                    <div class="workflow-toggle-list workflow-toggle-list-card">
+                                        <label class="workflow-toggle">
+                                            <div class="workflow-toggle-text">
+                                                <div class="workflow-toggle-label">Stop on failure</div>
+                                                <div class="workflow-toggle-hint">Halt workflow on first failed step.</div>
+                                            </div>
+                                            <div class="workflow-toggle-switch @(_selectedWorkflow.StopOnFailure ? "on" : null)">
+                                                <input class="workflow-toggle-input" type="checkbox" @bind="_selectedWorkflow.StopOnFailure" @bind:after="MarkDirty" />
+                                            </div>
+                                        </label>
+                                        <label class="workflow-toggle">
+                                            <div class="workflow-toggle-text">
+                                                <div class="workflow-toggle-label">Manual resume</div>
+                                                <div class="workflow-toggle-hint">Operator must resume after pause events.</div>
+                                            </div>
+                                            <div class="workflow-toggle-switch @(_selectedWorkflow.ManualResume ? "on" : null)">
+                                                <input class="workflow-toggle-input" type="checkbox" @bind="_selectedWorkflow.ManualResume" @bind:after="MarkDirty" />
+                                            </div>
+                                        </label>
+                                        <label class="workflow-toggle">
+                                            <div class="workflow-toggle-text">
+                                                <div class="workflow-toggle-label">Require confirmation</div>
+                                                <div class="workflow-toggle-hint">Prompt operator before run.</div>
+                                            </div>
+                                            <div class="workflow-toggle-switch @(_selectedWorkflow.RequiresConfirmation ? "on" : null)">
+                                                <input class="workflow-toggle-input" type="checkbox" @bind="_selectedWorkflow.RequiresConfirmation" @bind:after="MarkDirty" />
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        else if (_selectedTab == "Step")
+                        {
+                            @if (SelectedStep is null)
+                            {
+                                <div class="workflow-empty-state">Select a workflow step to edit it.</div>
+                            }
+                            else
+                            {
+                                <div class="workflow-form-panel workflow-step-panel">
+                                    <div class="workflow-step-chip-row">
+                                        <span class="workflow-step-chip workflow-step-chip-sequence">Step @SelectedStep.Sequence.ToString("00")</span>
+                                        <span class="workflow-step-chip @GetSelectedStepStatusClass()">@GetSelectedStepStatusLabel()</span>
+                                    </div>
+                                    <div class="workflow-field">
+                                        <label class="workflow-field-label">Step Label</label>
+                                        <input class="workflow-input workflow-input-hero" @bind="SelectedStep!.DisplayName" @bind:after="MarkDirty" />
+                                    </div>
+                                    <div class="workflow-field">
+                                        <label class="workflow-field-label">TaskChain</label>
+                                        <div class="workflow-select-wrap">
+                                            <select class="workflow-select workflow-select-hero" @bind="SelectedStep!.TaskChainName" @bind:after="MarkDirty">
+                                                @foreach (var option in _taskChains)
+                                                {
+                                                    <option value="@option.Name">@option.Name</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="workflow-field-grid workflow-field-grid-tight">
+                                        <div class="workflow-field">
+                                            <label class="workflow-field-label">Timeout (s)</label>
+                                            <input class="workflow-input workflow-input-mono workflow-input-hero" type="number" @bind="SelectedStep!.TimeoutSeconds" @bind:after="MarkDirty" />
+                                        </div>
+                                        <div class="workflow-field">
+                                            <label class="workflow-field-label">Retry Count</label>
+                                            <input class="workflow-input workflow-input-mono workflow-input-hero" type="number" @bind="SelectedStep!.RetryCount" @bind:after="MarkDirty" />
+                                        </div>
+                                    </div>
+                                    <div class="workflow-field">
+                                        <label class="workflow-field-label">On Failure</label>
+                                        <div class="workflow-select-wrap">
+                                            <select class="workflow-select workflow-select-hero" @bind="SelectedStep!.FailurePolicy" @bind:after="MarkDirty">
+                                                @foreach (var policy in Enum.GetValues<WorkflowFailurePolicy>())
+                                                {
+                                                    <option value="@policy">@GetFailurePolicyLabel(policy)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="workflow-field">
+                                        <label class="workflow-field-label">Note</label>
+                                        <textarea class="workflow-textarea workflow-textarea-step" rows="3" placeholder="Optional operator note..." @bind="SelectedStep!.Note" @bind:after="MarkDirty"></textarea>
+                                    </div>
+                                    <div class="workflow-field-divider"></div>
+                                    <div class="workflow-field">
+                                        <label class="workflow-field-label">TaskChain Preview</label>
+                                        <div class="workflow-preview-card workflow-step-preview-card">
+                                            <div class="workflow-preview-head">
+                                                <strong>@GetSelectedTaskChainName()</strong>
+                                                <span class="workflow-step-preview-status">@GetSelectedTaskChainStatusLabel()</span>
+                                            </div>
+                                            <div class="workflow-preview-info">
+                                                <span class="workflow-step-preview-dot"></span>
+                                                <span>@GetSelectedTaskChainSummaryLine()</span>
+                                            </div>
+                                            <div class="workflow-preview-note">@GetSelectedTaskChainNote()</div>
+                                        </div>
+                                    </div>
+                                    <div class="workflow-runtime-actions workflow-step-actions">
+                                        <button type="button" class="workflow-toolbar-button" @onclick="DuplicateStep" disabled="@_isBusy">Duplicate</button>
+                                        <button type="button" class="workflow-toolbar-button workflow-toolbar-button-danger" @onclick="DeleteStep" disabled="@_isBusy">Delete</button>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            @if (_activeRun is null)
+                            {
+                                <div class="workflow-empty-state">No active workflow run on the selected robot.</div>
+                            }
+                            else
+                            {
+                                <div class="workflow-field"><label class="workflow-field-label">Status</label><div class="workflow-input">@_activeRun.Status</div></div>
+                                <div class="workflow-field"><label class="workflow-field-label">Robot</label><div class="workflow-input">@_activeRun.RobotId</div></div>
+                                <div class="workflow-field"><label class="workflow-field-label">Current Step</label><div class="workflow-input">@GetActiveStepLabel()</div></div>
+                                <div class="workflow-field"><label class="workflow-field-label">Last Message</label><div class="workflow-input">@(GetActiveStepMessage() ?? _activeRun.ErrorMessage ?? "No runtime message.")</div></div>
+                            }
+                        }
+                    </div>
+                </aside>
+            </div>
+
+            <section class="workflow-history @(_historyExpanded ? "expanded" : null)">
+                <div class="workflow-history-header">
+                    <h2>Execution History</h2>
+                    <span class="workflow-history-sub">Latest persisted workflow runs for @(_selectedRobotId ?? "all robots")</span>
+                    <div class="workflow-history-spacer"></div>
+                    <button type="button" class="workflow-history-toggle" @onclick="ToggleHistory">@(_historyExpanded ? "Collapse" : "Expand")</button>
+                </div>
+                <div class="workflow-history-scroll">
+                    @if (_history.Count == 0)
+                    {
+                        <div class="workflow-empty-state">No workflow history yet.</div>
+                    }
+                    else
+                    {
+                        <table class="workflow-history-table">
+                            <thead>
+                                <tr><th>Started</th><th>Workflow</th><th>Robot</th><th>Step</th><th>Status</th><th>Message</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var entry in _history)
+                                {
+                                    <tr>
+                                        <td>@entry.StartedAt.ToLocalTime().ToString("HH:mm:ss")</td>
+                                        <td class="workflow-history-cell-sans">@entry.WorkflowName</td>
+                                        <td>@entry.RobotId</td>
+                                        <td>@(entry.StepSequence is null ? "-" : $"{entry.StepSequence}: {entry.StepName}")</td>
+                                        <td><span class="workflow-status-chip @GetHistoryStatusClass(entry.Status)">@entry.Status</span></td>
+                                        <td class="workflow-history-cell-sans">@entry.Message</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </section>
+        </main>
+    </div>
+</section>
+
+@code {
+    private readonly List<WorkflowSummaryDto> _workflows = [];
+    private readonly List<RobotSummary> _robots = [];
+    private readonly List<SeerTaskChainSummary> _taskChains = [];
+    private readonly List<WorkflowHistoryEntryDto> _history = [];
+    private WorkflowDetailDto? _selectedWorkflow;
+    private WorkflowValidationResult? _validationResult;
+    private WorkflowRunDto? _activeRun;
+    private GatewayHealth? _gatewayHealth;
+    private Guid? _selectedStepId;
+    private string? _selectedRobotId;
+    private string _searchText = string.Empty;
+    private string _selectedTab = "Workflow";
+    private string? _errorMessage;
+    private bool _historyExpanded;
+    private bool _isBusy;
+    private bool _isDirty;
+    private bool _isLoading = true;
+
+    private IReadOnlyList<WorkflowSummaryDto> FilteredWorkflows => _workflows.Where(item => string.IsNullOrWhiteSpace(_searchText)
+        || item.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+        || (item.Description?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+
+    private WorkflowStepDto? SelectedStep => _selectedWorkflow?.Steps.FirstOrDefault(step => step.Id == _selectedStepId)
+        ?? _selectedWorkflow?.Steps.OrderBy(step => step.Sequence).FirstOrDefault();
+
+    private bool _canEdit => _selectedWorkflow is not null;
+    private bool CanRun => !_isBusy && _selectedWorkflow is not null && !string.IsNullOrWhiteSpace(_selectedRobotId) && _validationResult?.CanExecute == true && _activeRun is null;
+    private bool CanPause => !_isBusy && _activeRun?.Status is WorkflowExecutionStatus.Starting or WorkflowExecutionStatus.Running;
+    private bool CanResume => !_isBusy && _activeRun?.Status == WorkflowExecutionStatus.Paused;
+    private bool CanCancel => !_isBusy && _activeRun is not null && _activeRun.Status is WorkflowExecutionStatus.Starting or WorkflowExecutionStatus.Running or WorkflowExecutionStatus.Paused;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await TelemetryClient.StartAsync();
+        TelemetryClient.TelemetryReceived += HandleTelemetry;
+        await LoadAsync();
+    }
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+        try
+        {
+            _robots.Clear();
+            _robots.AddRange(await ApiClient.GetRobotsAsync());
+            _selectedRobotId ??= _robots.FirstOrDefault()?.RobotId;
+            _taskChains.Clear();
+            _taskChains.AddRange(await ApiClient.GetTaskChainsAsync());
+            _gatewayHealth = await ApiClient.GetGatewayHealthAsync();
+            await RefreshWorkflowListAsync();
+            if (_workflows.Count > 0)
+            {
+                await SelectWorkflowAsync(_workflows[0].Id);
+            }
+            await RefreshRuntimeAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task RefreshWorkflowListAsync()
+    {
+        _workflows.Clear();
+        _workflows.AddRange(await ApiClient.GetWorkflowsAsync());
+    }
+
+    private async Task RefreshRuntimeAsync()
+    {
+        _activeRun = string.IsNullOrWhiteSpace(_selectedRobotId) ? null : await ApiClient.GetActiveWorkflowRunAsync(_selectedRobotId);
+        _history.Clear();
+        _history.AddRange(await ApiClient.GetWorkflowHistoryAsync(_selectedRobotId));
+    }
+
+    private async Task SelectWorkflowAsync(Guid workflowId)
+    {
+        _isBusy = true;
+        _errorMessage = null;
+        try
+        {
+            _selectedWorkflow = await ApiClient.GetWorkflowAsync(workflowId);
+            if (!string.IsNullOrWhiteSpace(_selectedWorkflow?.AssignedRobotId))
+            {
+                _selectedRobotId = _selectedWorkflow.AssignedRobotId;
+            }
+            _selectedStepId = _selectedWorkflow?.Steps.OrderBy(step => step.Sequence).FirstOrDefault()?.Id;
+            _validationResult = _selectedWorkflow is null ? null : await ApiClient.ValidateWorkflowAsync(workflowId);
+            _isDirty = false;
+            _selectedTab = _selectedWorkflow?.Steps.Count > 0 ? "Step" : "Workflow";
+            await RefreshRuntimeAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task CreateWorkflowAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            var created = await ApiClient.CreateWorkflowAsync(new CreateWorkflowRequest { Name = $"Workflow {_workflows.Count + 1:00}", ExecutionMode = "Sequential", Steps = [] });
+            await RefreshWorkflowListAsync();
+            await SelectWorkflowAsync(created.Id);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DuplicateWorkflowAsync()
+    {
+        if (_selectedWorkflow is null) return;
+        _isBusy = true;
+        try
+        {
+            var duplicated = await ApiClient.DuplicateWorkflowAsync(_selectedWorkflow.Id, new DuplicateWorkflowRequest { Name = $"{_selectedWorkflow.Name} Copy" });
+            await RefreshWorkflowListAsync();
+            await SelectWorkflowAsync(duplicated.Id);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteWorkflowAsync()
+    {
+        if (_selectedWorkflow is null) return;
+        _isBusy = true;
+        try
+        {
+            await ApiClient.DeleteWorkflowAsync(_selectedWorkflow.Id);
+            await RefreshWorkflowListAsync();
+            _selectedWorkflow = null;
+            _validationResult = null;
+            _selectedStepId = null;
+            _isDirty = false;
+            if (_workflows.Count > 0)
+            {
+                await SelectWorkflowAsync(_workflows[0].Id);
+            }
+            else
+            {
+                await RefreshRuntimeAsync();
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_selectedWorkflow is null) return;
+        _isBusy = true;
+        try
+        {
+            await ApiClient.UpdateWorkflowAsync(_selectedWorkflow.Id, new UpdateWorkflowRequest
+            {
+                Name = _selectedWorkflow.Name,
+                Description = _selectedWorkflow.Description,
+                AssignedRobotId = _selectedWorkflow.AssignedRobotId,
+                ExecutionMode = _selectedWorkflow.ExecutionMode,
+                RequiresConfirmation = _selectedWorkflow.RequiresConfirmation,
+                StopOnFailure = _selectedWorkflow.StopOnFailure,
+                ManualResume = _selectedWorkflow.ManualResume,
+                IsPublished = _selectedWorkflow.IsPublished
+            });
+            await ApiClient.ReplaceWorkflowStepsAsync(_selectedWorkflow.Id, new ReplaceWorkflowStepsRequest { Steps = _selectedWorkflow.Steps.OrderBy(step => step.Sequence).ToList() });
+            await RefreshWorkflowListAsync();
+            await SelectWorkflowAsync(_selectedWorkflow.Id);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task ValidateAsync()
+    {
+        if (_selectedWorkflow is null) return;
+        _isBusy = true;
+        try
+        {
+            _validationResult = await ApiClient.ValidateWorkflowAsync(_selectedWorkflow.Id);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task RunAsync()
+    {
+        if (_selectedWorkflow is null || string.IsNullOrWhiteSpace(_selectedRobotId)) return;
+        _isBusy = true;
+        try
+        {
+            _activeRun = await ApiClient.ExecuteWorkflowAsync(_selectedWorkflow.Id, new ExecuteWorkflowRequest { RobotId = _selectedRobotId, Confirmed = true, TriggeredBy = RoleState.CurrentRole.ToString() }, RoleState.CurrentRole);
+            _selectedTab = "Runtime";
+            await RefreshRuntimeAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task PauseAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedRobotId)) return;
+        _isBusy = true;
+        try
+        {
+            _activeRun = await ApiClient.PauseWorkflowAsync(_selectedRobotId, RoleState.CurrentRole);
+            await RefreshRuntimeAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task ResumeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedRobotId)) return;
+        _isBusy = true;
+        try
+        {
+            _activeRun = await ApiClient.ResumeWorkflowAsync(_selectedRobotId, RoleState.CurrentRole);
+            await RefreshRuntimeAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedRobotId)) return;
+        _isBusy = true;
+        try
+        {
+            _activeRun = await ApiClient.CancelWorkflowAsync(_selectedRobotId, RoleState.CurrentRole);
+            await RefreshRuntimeAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+    private Task SelectedRobotChangedAsync()
+    {
+        _ = RefreshRuntimeAsync();
+        return Task.CompletedTask;
+    }
+
+    private Task AssignedRobotChangedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_selectedWorkflow?.AssignedRobotId))
+        {
+            _selectedRobotId = _selectedWorkflow.AssignedRobotId;
+            _ = RefreshRuntimeAsync();
+        }
+        MarkDirty();
+        return Task.CompletedTask;
+    }
+
+    private void OnPublishStateChanged(ChangeEventArgs args)
+    {
+        if (_selectedWorkflow is null) return;
+        _selectedWorkflow.IsPublished = string.Equals(args.Value?.ToString(), "Published", StringComparison.OrdinalIgnoreCase);
+        MarkDirty();
+    }
+
+    private void AddStep()
+    {
+        if (_selectedWorkflow is null) return;
+        var step = new WorkflowStepDto
+        {
+            Id = Guid.NewGuid(),
+            Sequence = _selectedWorkflow.Steps.Count + 1,
+            StepType = "TaskChain",
+            TaskChainName = _taskChains.FirstOrDefault()?.Name ?? string.Empty,
+            DisplayName = $"Step {_selectedWorkflow.Steps.Count + 1:00}",
+            TimeoutSeconds = 60,
+            RetryCount = 0,
+            FailurePolicy = WorkflowFailurePolicy.StopWorkflow,
+            StopOnFailure = true
+        };
+        _selectedWorkflow.Steps = _selectedWorkflow.Steps.Append(step).OrderBy(item => item.Sequence).ToList();
+        _selectedStepId = step.Id;
+        _selectedTab = "Step";
+        MarkDirty();
+    }
+
+    private void DuplicateStep()
+    {
+        if (_selectedWorkflow is null || SelectedStep is null) return;
+        var copy = new WorkflowStepDto
+        {
+            Id = Guid.NewGuid(),
+            Sequence = SelectedStep.Sequence + 1,
+            StepType = SelectedStep.StepType,
+            TaskChainName = SelectedStep.TaskChainName,
+            DisplayName = string.IsNullOrWhiteSpace(SelectedStep.DisplayName) ? null : $"{SelectedStep.DisplayName} Copy",
+            TimeoutSeconds = SelectedStep.TimeoutSeconds,
+            RetryCount = SelectedStep.RetryCount,
+            FailurePolicy = SelectedStep.FailurePolicy,
+            Note = SelectedStep.Note,
+            StopOnFailure = SelectedStep.StopOnFailure,
+            ParametersJson = SelectedStep.ParametersJson
+        };
+        var steps = _selectedWorkflow.Steps.ToList();
+        steps.Insert(SelectedStep.Sequence, copy);
+        NormalizeStepOrder(steps);
+        _selectedWorkflow.Steps = steps;
+        _selectedStepId = copy.Id;
+        MarkDirty();
+    }
+
+    private void DeleteStep()
+    {
+        if (_selectedWorkflow is null || SelectedStep is null) return;
+        var steps = _selectedWorkflow.Steps.Where(step => step.Id != SelectedStep.Id).ToList();
+        NormalizeStepOrder(steps);
+        _selectedWorkflow.Steps = steps;
+        _selectedStepId = steps.FirstOrDefault()?.Id;
+        MarkDirty();
+    }
+
+    private void SelectStep(Guid stepId)
+    {
+        _selectedStepId = stepId;
+        _selectedTab = "Step";
+    }
+
+    private SeerTaskChainSummary? SelectedTaskChainSummary
+        => string.IsNullOrWhiteSpace(SelectedStep?.TaskChainName)
+            ? null
+            : _taskChains.FirstOrDefault(item => string.Equals(item.Name, SelectedStep.TaskChainName, StringComparison.OrdinalIgnoreCase));
+
+    private static void NormalizeStepOrder(List<WorkflowStepDto> steps)
+    {
+        for (var index = 0; index < steps.Count; index++)
+        {
+            steps[index].Sequence = index + 1;
+        }
+    }
+
+    private string GetSelectedStepStatusLabel()
+    {
+        if (SelectedStep is null)
+        {
+            return "Draft";
+        }
+
+        var runStep = _activeRun?.Steps.FirstOrDefault(step => step.Sequence == SelectedStep.Sequence);
+        return runStep?.Status.ToString().ToUpperInvariant() ?? "READY";
+    }
+
+    private string GetSelectedStepStatusClass()
+    {
+        if (SelectedStep is null)
+        {
+            return "workflow-step-chip-ready";
+        }
+
+        var runStep = _activeRun?.Steps.FirstOrDefault(step => step.Sequence == SelectedStep.Sequence);
+        return runStep?.Status switch
+        {
+            WorkflowStepExecutionStatus.Running or WorkflowStepExecutionStatus.Starting => "workflow-step-chip-running",
+            WorkflowStepExecutionStatus.Completed => "workflow-step-chip-ready",
+            WorkflowStepExecutionStatus.Failed or WorkflowStepExecutionStatus.Canceled or WorkflowStepExecutionStatus.TimedOut => "workflow-step-chip-error",
+            WorkflowStepExecutionStatus.Paused => "workflow-step-chip-paused",
+            _ => "workflow-step-chip-ready"
+        };
+    }
+
+    private string GetFailurePolicyLabel(WorkflowFailurePolicy policy) => policy switch
+    {
+        WorkflowFailurePolicy.StopWorkflow => "Retry then halt",
+        WorkflowFailurePolicy.ContinueWorkflow => "Continue workflow",
+        WorkflowFailurePolicy.RetryStep => "Retry step",
+        WorkflowFailurePolicy.RequireManualResume => "Require manual resume",
+        _ => policy.ToString()
+    };
+
+    private string GetSelectedTaskChainName()
+        => string.IsNullOrWhiteSpace(SelectedStep?.TaskChainName) ? "No taskchain selected" : SelectedStep.TaskChainName;
+
+    private string GetSelectedTaskChainStatusLabel()
+        => SelectedTaskChainSummary?.LastKnownStatus?.ToString().ToUpperInvariant() ?? "READY";
+
+    private string GetSelectedTaskChainSummaryLine()
+    {
+        var createdOn = SelectedTaskChainSummary?.CreatedOn?.ToLocalTime().ToString("HH:mm");
+        return createdOn is null
+            ? "Last run data unavailable."
+            : $"Last sync {createdOn}. Status snapshot available.";
+    }
+
+    private string GetSelectedTaskChainNote()
+    {
+        var taskStatus = SelectedTaskChainSummary?.LastKnownStatus;
+        if (taskStatus is null)
+        {
+            return "Preview reflects the latest taskchain catalog entry from AGV API.";
+        }
+
+        return $"Latest known status from catalog: {taskStatus}. Use Runtime tab for live execution details.";
+    }
+
+    private string GetWorkflowStateIcon()
+        => _activeRun?.Status is WorkflowExecutionStatus.Starting or WorkflowExecutionStatus.Running
+            ? "activity"
+            : _validationResult?.IsValid == false
+                ? "circle-alert"
+                : "circle-check";
+
+    private string GetSaveStateLabel()
+        => _isDirty
+            ? "Unsaved"
+            : _selectedWorkflow is null
+                ? "Saved"
+                : $"Saved {FormatUpdated(_selectedWorkflow.UpdatedAt)}";
+    private string GetWorkflowStateLabel() => _activeRun is not null ? _activeRun.Status.ToString() : _selectedWorkflow is null ? "No selection" : _validationResult?.IsValid == false ? "Invalid" : _selectedWorkflow.IsPublished ? "Published" : "Draft";
+    private string GetWorkflowStateChipClass() => _activeRun is not null ? GetHistoryStatusClass(_activeRun.Status) : _selectedWorkflow is null ? "workflow-chip-muted" : _validationResult?.IsValid == false ? "workflow-chip-warn" : _selectedWorkflow.IsPublished ? "workflow-chip-ok" : "workflow-chip-muted";
+    private string GetGatewayLabel() => _gatewayHealth is null ? "Gateway unavailable" : string.IsNullOrWhiteSpace(_gatewayHealth.Message) ? _gatewayHealth.BaseUrl : _gatewayHealth.Message;
+    private string GetValidationSummary() => _validationResult is null ? "Validation has not run yet." : $"{_validationResult.Issues.Count(issue => string.Equals(issue.Severity, "Error", StringComparison.OrdinalIgnoreCase))} errors Â· {_validationResult.Issues.Count(issue => !string.Equals(issue.Severity, "Error", StringComparison.OrdinalIgnoreCase))} warnings.";
+    private string GetValidationMessage() => _validationResult is null ? string.Empty : _validationResult.Issues.Count == 0 ? "Workflow is valid against the current task chain catalog." : string.Join(" ", _validationResult.Issues.Take(3).Select(issue => issue.Message));
+    private string GetActiveStepLabel() => _activeRun?.Steps.FirstOrDefault(step => step.Sequence == _activeRun.CurrentStepSequence) is { } step ? $"{step.Sequence}: {(string.IsNullOrWhiteSpace(step.DisplayName) ? step.TaskChainName : step.DisplayName)}" : "No active step";
+    private string? GetActiveStepMessage() => _activeRun?.Steps.FirstOrDefault(step => step.Sequence == _activeRun.CurrentStepSequence)?.Message;
+    private static string GetHistoryStatusClass(WorkflowExecutionStatus status) => status switch
+    {
+        WorkflowExecutionStatus.Completed => "workflow-status-ready",
+        WorkflowExecutionStatus.Failed or WorkflowExecutionStatus.Canceled => "workflow-status-error",
+        WorkflowExecutionStatus.Paused => "workflow-status-draft",
+        WorkflowExecutionStatus.Running or WorkflowExecutionStatus.Starting => "workflow-status-running",
+        _ => "workflow-status-draft"
+    };
+    private void MarkDirty() => _isDirty = true;
+    private void ToggleHistory() => _historyExpanded = !_historyExpanded;
+    private static string FormatUpdated(DateTimeOffset updatedAt)
+    {
+        var age = DateTimeOffset.UtcNow - updatedAt;
+        if (age < TimeSpan.FromMinutes(1)) return "just now";
+        if (age < TimeSpan.FromHours(1)) return $"{Math.Max(1, (int)age.TotalMinutes)}m ago";
+        if (age < TimeSpan.FromDays(1)) return $"{Math.Max(1, (int)age.TotalHours)}h ago";
+        return $"{Math.Max(1, (int)age.TotalDays)}d ago";
+    }
+
+    private void HandleTelemetry(RealtimeEvent telemetry)
+    {
+        if (telemetry.WorkflowRun is null || string.IsNullOrWhiteSpace(_selectedRobotId))
+        {
+            return;
+        }
+
+        if (!string.Equals(telemetry.WorkflowRun.RobotId, _selectedRobotId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            _activeRun = telemetry.WorkflowRun;
+            await RefreshRuntimeAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        TelemetryClient.TelemetryReceived -= HandleTelemetry;
+    }
+}
