@@ -13,6 +13,7 @@ This repo uses Harness. Before work, read:
 - `docs/ARCHITECTURE.md`
 - `docs/CONTEXT_RULES.md`
 - `docs/TOOL_REGISTRY.md`
+- `docs/agent-routing.md`
 - `scripts/bin/harness-cli query matrix` on macOS/Linux, or `.\scripts\bin\harness-cli.exe query matrix` on Windows
 
 Use the Rust Harness CLI at `scripts/bin/harness-cli` on macOS/Linux or
