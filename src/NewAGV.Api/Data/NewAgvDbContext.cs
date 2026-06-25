@@ -73,6 +73,7 @@ public sealed class NewAgvDbContext(DbContextOptions<NewAgvDbContext> options) :
             entity.Property(item => item.TaskChainName).HasMaxLength(120).IsRequired();
             entity.Property(item => item.DisplayName).HasMaxLength(160);
             entity.Property(item => item.Status).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.TaskChainRunId).HasMaxLength(80);
             entity.Property(item => item.SeerTaskId).HasMaxLength(80);
             entity.Property(item => item.Message).HasMaxLength(1000);
             entity.Property(item => item.FailurePolicy).HasMaxLength(40).IsRequired();
@@ -148,6 +149,7 @@ public sealed class WorkflowRunStepEntity
     public string FailurePolicy { get; set; } = "StopWorkflow";
     public string? Note { get; set; }
     public string Status { get; set; } = "Pending";
+    public string? TaskChainRunId { get; set; }
     public string? SeerTaskId { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }

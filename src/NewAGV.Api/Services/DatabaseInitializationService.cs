@@ -51,6 +51,7 @@ public sealed class DatabaseInitializationService(
             "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"RetryCount\" integer NOT NULL DEFAULT 0;",
             "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"FailurePolicy\" character varying(40) NOT NULL DEFAULT 'StopWorkflow';",
             "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"Note\" character varying(1000);",
+            "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"TaskChainRunId\" character varying(80);",
             "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"ProgressPercent\" double precision;",
             "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"Info\" character varying(1000);"
         };

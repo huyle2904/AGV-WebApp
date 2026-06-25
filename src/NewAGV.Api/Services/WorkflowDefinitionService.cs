@@ -210,6 +210,11 @@ public sealed class WorkflowDefinitionService(NewAgvDbContext dbContext)
             throw new InvalidOperationException("Cannot delete a workflow with an active run.");
         }
 
+        if (entity.Runs.Count > 0)
+        {
+            dbContext.WorkflowRuns.RemoveRange(entity.Runs);
+        }
+
         dbContext.WorkflowDefinitions.Remove(entity);
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;

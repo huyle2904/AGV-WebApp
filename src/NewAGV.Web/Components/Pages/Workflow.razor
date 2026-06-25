@@ -1,5 +1,6 @@
 ﻿@page "/workflow"
 @using System.Net.Http
+@using System.Threading
 @inject AgvApiClient ApiClient
 @inject DemoRoleState RoleState
 @inject TelemetryClientService TelemetryClient
@@ -67,7 +68,7 @@
                                 <button type="button" class="workflow-catalog-item @(workflow.Id == _selectedWorkflow?.Id ? "selected" : null)" @onclick="() => SelectWorkflowAsync(workflow.Id)">
                                     <div class="workflow-catalog-main">
                                         <div class="workflow-catalog-name">@workflow.Name</div>
-                                        <div class="workflow-catalog-meta">v@workflow.Version Â· @workflow.StepCount steps Â· @FormatUpdated(workflow.UpdatedAt)</div>
+                                        <div class="workflow-catalog-meta">@GetWorkflowCatalogMeta(workflow)</div>
                                     </div>
                                     <span class="workflow-status-chip @(workflow.IsPublished ? "workflow-status-ready" : "workflow-status-draft")">@(workflow.IsPublished ? "Published" : "Draft")</span>
                                 </button>
@@ -127,7 +128,7 @@
                                                 <span class="workflow-step-name">@(string.IsNullOrWhiteSpace(step.DisplayName) ? step.TaskChainName : step.DisplayName)</span>
                                                 <span class="workflow-status-chip workflow-status-ready">@step.StepType</span>
                                             </div>
-                                            <div class="workflow-step-meta">@step.TaskChainName Â· timeout @step.TimeoutSeconds s Â· retry x@step.RetryCount Â· @step.FailurePolicy</div>
+                                            <div class="workflow-step-meta">@GetStepMeta(step)</div>
                                         </div>
                                     </button>
                                 }
@@ -152,40 +153,45 @@
                         }
                         else if (_selectedTab == "Workflow")
                         {
-                            <div class="workflow-form-panel">
-                                <div class="workflow-field">
-                                    <label class="workflow-field-label">Workflow Name</label>
-                                    <input class="workflow-input workflow-input-hero" @bind="_selectedWorkflow.Name" @bind:after="MarkDirty" />
-                                </div>
-                                <div class="workflow-field">
-                                    <label class="workflow-field-label">Description</label>
-                                    <textarea class="workflow-textarea workflow-textarea-hero" rows="4" @bind="_selectedWorkflow.Description" @bind:after="MarkDirty"></textarea>
-                                </div>
-                                <div class="workflow-field-grid workflow-field-grid-tight">
-                                    <div class="workflow-field">
-                                        <label class="workflow-field-label">Assigned Robot</label>
-                                        <div class="workflow-select-wrap">
-                                            <select class="workflow-select workflow-select-hero" @bind="_selectedWorkflow.AssignedRobotId" @bind:after="AssignedRobotChangedAsync">
-                                                <option value="">Any robot</option>
-                                                @foreach (var robot in _robots)
-                                                {
-                                                    <option value="@robot.RobotId">@robot.RobotId</option>
-                                                }
-                                            </select>
+                            <div class="workflow-side-shell">
+                                <div class="workflow-runtime-section-title">Workflow</div>
+                                <section class="workflow-side-card">
+                                    <div class="workflow-form-panel">
+                                        <div class="workflow-field">
+                                            <label class="workflow-field-label">Workflow Name</label>
+                                            <input class="workflow-input workflow-input-hero" @bind="_selectedWorkflow.Name" @bind:after="MarkDirty" />
+                                        </div>
+                                        <div class="workflow-field">
+                                            <label class="workflow-field-label">Description</label>
+                                            <textarea class="workflow-textarea workflow-textarea-hero" rows="4" @bind="_selectedWorkflow.Description" @bind:after="MarkDirty"></textarea>
+                                        </div>
+                                        <div class="workflow-field-grid workflow-field-grid-tight">
+                                            <div class="workflow-field">
+                                                <label class="workflow-field-label">Assigned Robot</label>
+                                                <div class="workflow-select-wrap">
+                                                    <select class="workflow-select workflow-select-hero" @bind="_selectedWorkflow.AssignedRobotId" @bind:after="AssignedRobotChangedAsync">
+                                                        <option value="">Any robot</option>
+                                                        @foreach (var robot in _robots)
+                                                        {
+                                                            <option value="@robot.RobotId">@robot.RobotId</option>
+                                                        }
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="workflow-field">
+                                                <label class="workflow-field-label">Execution Mode</label>
+                                                <div class="workflow-select-wrap">
+                                                    <select class="workflow-select workflow-select-hero" @bind="_selectedWorkflow.ExecutionMode" @bind:after="MarkDirty">
+                                                        <option value="Sequential">Sequential</option>
+                                                    </select>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="workflow-field">
-                                        <label class="workflow-field-label">Execution Mode</label>
-                                        <div class="workflow-select-wrap">
-                                            <select class="workflow-select workflow-select-hero" @bind="_selectedWorkflow.ExecutionMode" @bind:after="MarkDirty">
-                                                <option value="Sequential">Sequential</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="workflow-field-divider"></div>
-                                <div class="workflow-field">
-                                    <label class="workflow-field-label">Behavior</label>
+                                </section>
+
+                                <div class="workflow-runtime-section-title">Behavior</div>
+                                <section class="workflow-side-card">
                                     <div class="workflow-toggle-list workflow-toggle-list-card">
                                         <label class="workflow-toggle">
                                             <div class="workflow-toggle-text">
@@ -215,7 +221,7 @@
                                             </div>
                                         </label>
                                     </div>
-                                </div>
+                                </section>
                             </div>
                         }
                         else if (_selectedTab == "Step")
@@ -226,54 +232,59 @@
                             }
                             else
                             {
-                                <div class="workflow-form-panel workflow-step-panel">
-                                    <div class="workflow-step-chip-row">
-                                        <span class="workflow-step-chip workflow-step-chip-sequence">Step @SelectedStep.Sequence.ToString("00")</span>
-                                        <span class="workflow-step-chip @GetSelectedStepStatusClass()">@GetSelectedStepStatusLabel()</span>
-                                    </div>
-                                    <div class="workflow-field">
-                                        <label class="workflow-field-label">Step Label</label>
-                                        <input class="workflow-input workflow-input-hero" @bind="SelectedStep!.DisplayName" @bind:after="MarkDirty" />
-                                    </div>
-                                    <div class="workflow-field">
-                                        <label class="workflow-field-label">TaskChain</label>
-                                        <div class="workflow-select-wrap">
-                                            <select class="workflow-select workflow-select-hero" @bind="SelectedStep!.TaskChainName" @bind:after="MarkDirty">
-                                                @foreach (var option in _taskChains)
-                                                {
-                                                    <option value="@option.Name">@option.Name</option>
-                                                }
-                                            </select>
+                                <div class="workflow-side-shell">
+                                    <div class="workflow-runtime-section-title">Step</div>
+                                    <section class="workflow-side-card">
+                                        <div class="workflow-form-panel workflow-step-panel">
+                                            <div class="workflow-step-chip-row">
+                                                <span class="workflow-step-chip workflow-step-chip-sequence">Step @SelectedStep.Sequence.ToString("00")</span>
+                                                <span class="workflow-step-chip @GetSelectedStepStatusClass()">@GetSelectedStepStatusLabel()</span>
+                                            </div>
+                                            <div class="workflow-field">
+                                                <label class="workflow-field-label">Step Label</label>
+                                                <input class="workflow-input workflow-input-hero" @bind="SelectedStep!.DisplayName" @bind:after="MarkDirty" />
+                                            </div>
+                                            <div class="workflow-field">
+                                                <label class="workflow-field-label">TaskChain</label>
+                                                <div class="workflow-select-wrap">
+                                                    <select class="workflow-select workflow-select-hero" @bind="SelectedStep!.TaskChainName" @bind:after="MarkDirty">
+                                                        @foreach (var option in _taskChains)
+                                                        {
+                                                            <option value="@option.Name">@option.Name</option>
+                                                        }
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="workflow-field-grid workflow-field-grid-tight">
+                                                <div class="workflow-field">
+                                                    <label class="workflow-field-label">Timeout (s)</label>
+                                                    <input class="workflow-input workflow-input-mono workflow-input-hero" type="number" @bind="SelectedStep!.TimeoutSeconds" @bind:after="MarkDirty" />
+                                                </div>
+                                                <div class="workflow-field">
+                                                    <label class="workflow-field-label">Retry Count</label>
+                                                    <input class="workflow-input workflow-input-mono workflow-input-hero" type="number" @bind="SelectedStep!.RetryCount" @bind:after="MarkDirty" />
+                                                </div>
+                                            </div>
+                                            <div class="workflow-field">
+                                                <label class="workflow-field-label">On Failure</label>
+                                                <div class="workflow-select-wrap">
+                                                    <select class="workflow-select workflow-select-hero" @bind="SelectedStep!.FailurePolicy" @bind:after="MarkDirty">
+                                                        @foreach (var policy in Enum.GetValues<WorkflowFailurePolicy>())
+                                                        {
+                                                            <option value="@policy">@GetFailurePolicyLabel(policy)</option>
+                                                        }
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="workflow-field">
+                                                <label class="workflow-field-label">Note</label>
+                                                <textarea class="workflow-textarea workflow-textarea-step" rows="2" placeholder="Optional operator note..." @bind="SelectedStep!.Note" @bind:after="MarkDirty"></textarea>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div class="workflow-field-grid workflow-field-grid-tight">
-                                        <div class="workflow-field">
-                                            <label class="workflow-field-label">Timeout (s)</label>
-                                            <input class="workflow-input workflow-input-mono workflow-input-hero" type="number" @bind="SelectedStep!.TimeoutSeconds" @bind:after="MarkDirty" />
-                                        </div>
-                                        <div class="workflow-field">
-                                            <label class="workflow-field-label">Retry Count</label>
-                                            <input class="workflow-input workflow-input-mono workflow-input-hero" type="number" @bind="SelectedStep!.RetryCount" @bind:after="MarkDirty" />
-                                        </div>
-                                    </div>
-                                    <div class="workflow-field">
-                                        <label class="workflow-field-label">On Failure</label>
-                                        <div class="workflow-select-wrap">
-                                            <select class="workflow-select workflow-select-hero" @bind="SelectedStep!.FailurePolicy" @bind:after="MarkDirty">
-                                                @foreach (var policy in Enum.GetValues<WorkflowFailurePolicy>())
-                                                {
-                                                    <option value="@policy">@GetFailurePolicyLabel(policy)</option>
-                                                }
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="workflow-field">
-                                        <label class="workflow-field-label">Note</label>
-                                        <textarea class="workflow-textarea workflow-textarea-step" rows="3" placeholder="Optional operator note..." @bind="SelectedStep!.Note" @bind:after="MarkDirty"></textarea>
-                                    </div>
-                                    <div class="workflow-field-divider"></div>
-                                    <div class="workflow-field">
-                                        <label class="workflow-field-label">TaskChain Preview</label>
+                                    </section>
+
+                                    <div class="workflow-runtime-section-title">TaskChain Preview</div>
+                                    <section class="workflow-side-card">
                                         <div class="workflow-preview-card workflow-step-preview-card">
                                             <div class="workflow-preview-head">
                                                 <strong>@GetSelectedTaskChainName()</strong>
@@ -285,8 +296,9 @@
                                             </div>
                                             <div class="workflow-preview-note">@GetSelectedTaskChainNote()</div>
                                         </div>
-                                    </div>
-                                    <div class="workflow-runtime-actions workflow-step-actions">
+                                    </section>
+
+                                    <div class="workflow-runtime-actions workflow-step-actions workflow-runtime-actions-panel">
                                         <button type="button" class="workflow-toolbar-button" @onclick="DuplicateStep" disabled="@_isBusy">Duplicate</button>
                                         <button type="button" class="workflow-toolbar-button workflow-toolbar-button-danger" @onclick="DeleteStep" disabled="@_isBusy">Delete</button>
                                     </div>
@@ -295,57 +307,103 @@
                         }
                         else
                         {
-                            @if (_activeRun is null)
-                            {
-                                <div class="workflow-empty-state">No active workflow run on the selected robot.</div>
-                            }
-                            else
-                            {
-                                <div class="workflow-field"><label class="workflow-field-label">Status</label><div class="workflow-input">@_activeRun.Status</div></div>
-                                <div class="workflow-field"><label class="workflow-field-label">Robot</label><div class="workflow-input">@_activeRun.RobotId</div></div>
-                                <div class="workflow-field"><label class="workflow-field-label">Current Step</label><div class="workflow-input">@GetActiveStepLabel()</div></div>
-                                <div class="workflow-field"><label class="workflow-field-label">Last Message</label><div class="workflow-input">@(GetActiveStepMessage() ?? _activeRun.ErrorMessage ?? "No runtime message.")</div></div>
-                            }
+                            <div class="workflow-runtime-shell">
+                                <section class="workflow-runtime-running @GetRuntimeRunSurfaceClass()">
+                                    <div class="workflow-runtime-card-accent" aria-hidden="true"></div>
+                                    <div class="workflow-runtime-running-head">
+                                        <div class="workflow-runtime-running-copy">
+                                            <div class="workflow-runtime-label">@GetRuntimeHeaderLabel()</div>
+                                            <div class="workflow-runtime-name">@GetRuntimeWorkflowName()</div>
+                                            <div class="workflow-runtime-sub">@GetRuntimeStartedSummary()</div>
+                                        </div>
+                                        <div class="workflow-runtime-elapsed workflow-runtime-pill">@GetRuntimeElapsed()</div>
+                                    </div>
+                                </section>
+
+                                <div class="workflow-runtime-section-title">Active Step</div>
+                                <section class="workflow-runtime-active @GetRuntimeStepSurfaceClass()">
+                                    <div class="workflow-runtime-card-accent workflow-runtime-card-accent-step" aria-hidden="true"></div>
+                                    <div class="workflow-runtime-active-head">
+                                        <span class="workflow-runtime-step-title">@GetRuntimeStepTitle()</span>
+                                        <span class="workflow-status-chip workflow-runtime-status-chip @GetRuntimeStepStatusClass()">
+                                            <i data-lucide="circle" class="workflow-runtime-status-icon" aria-hidden="true"></i>
+                                            <span>@GetRuntimeStepStatusLabel()</span>
+                                        </span>
+                                    </div>
+                                    <div class="workflow-runtime-chain">@GetRuntimeStepChain()</div>
+                                </section>
+
+                                <div class="workflow-runtime-section-title">Progress</div>
+                                <section class="workflow-runtime-progress">
+                                    <div class="workflow-runtime-card-accent workflow-runtime-card-accent-progress" aria-hidden="true"></div>
+                                    <div class="workflow-runtime-progress-head">
+                                        <span class="workflow-runtime-progress-label">@GetRuntimeProgressLabel()</span>
+                                        <span class="workflow-runtime-pct workflow-runtime-pill">@GetRuntimeProgressPercentText()</span>
+                                    </div>
+                                    <div class="workflow-progress-track">
+                                        <span class="workflow-progress-fill" style="@GetRuntimeProgressStyle()"></span>
+                                    </div>
+                                </section>
+
+                                <div class="workflow-runtime-section-title">Last Event</div>
+                                <section class="workflow-runtime-event">
+                                    <div class="workflow-runtime-card-accent workflow-runtime-card-accent-event" aria-hidden="true"></div>
+                                    <div class="workflow-runtime-event-time">@GetRuntimeLastEventTime()</div>
+                                    <div class="workflow-runtime-event-message">@GetRuntimeLastEventMessage()</div>
+                                </section>
+
+                                <div class="workflow-runtime-actions workflow-runtime-actions-panel">
+                                    <button type="button" class="workflow-toolbar-button workflow-toolbar-button-warning" @onclick="PauseAsync" disabled="@(!CanPause)">
+                                        <i data-lucide="pause" class="workflow-button-icon" aria-hidden="true"></i><span>Pause</span>
+                                    </button>
+                                    <button type="button" class="workflow-toolbar-button" @onclick="ResumeAsync" disabled="@(!CanResume)">
+                                        <i data-lucide="rotate-ccw" class="workflow-button-icon" aria-hidden="true"></i><span>Resume</span>
+                                    </button>
+                                    <button type="button" class="workflow-toolbar-button workflow-toolbar-button-danger" @onclick="CancelAsync" disabled="@(!CanCancel)">
+                                        <i data-lucide="square" class="workflow-button-icon" aria-hidden="true"></i><span>Cancel</span>
+                                    </button>
+                                </div>
+                            </div>
                         }
                     </div>
                 </aside>
-            </div>
 
-            <section class="workflow-history @(_historyExpanded ? "expanded" : null)">
-                <div class="workflow-history-header">
-                    <h2>Execution History</h2>
-                    <span class="workflow-history-sub">Latest persisted workflow runs for @(_selectedRobotId ?? "all robots")</span>
-                    <div class="workflow-history-spacer"></div>
-                    <button type="button" class="workflow-history-toggle" @onclick="ToggleHistory">@(_historyExpanded ? "Collapse" : "Expand")</button>
-                </div>
-                <div class="workflow-history-scroll">
-                    @if (_history.Count == 0)
-                    {
-                        <div class="workflow-empty-state">No workflow history yet.</div>
-                    }
-                    else
-                    {
-                        <table class="workflow-history-table">
-                            <thead>
-                                <tr><th>Started</th><th>Workflow</th><th>Robot</th><th>Step</th><th>Status</th><th>Message</th></tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var entry in _history)
-                                {
-                                    <tr>
-                                        <td>@entry.StartedAt.ToLocalTime().ToString("HH:mm:ss")</td>
-                                        <td class="workflow-history-cell-sans">@entry.WorkflowName</td>
-                                        <td>@entry.RobotId</td>
-                                        <td>@(entry.StepSequence is null ? "-" : $"{entry.StepSequence}: {entry.StepName}")</td>
-                                        <td><span class="workflow-status-chip @GetHistoryStatusClass(entry.Status)">@entry.Status</span></td>
-                                        <td class="workflow-history-cell-sans">@entry.Message</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    }
-                </div>
-            </section>
+                <section class="workflow-history @(_historyExpanded ? "expanded" : null)">
+                    <div class="workflow-history-header">
+                        <h2>Execution History</h2>
+                        <span class="workflow-history-sub">Latest persisted workflow steps for @(_selectedRobotId ?? "all robots")</span>
+                        <div class="workflow-history-spacer"></div>
+                        <button type="button" class="workflow-history-toggle" @onclick="ToggleHistory">@(_historyExpanded ? "Collapse" : "Expand")</button>
+                    </div>
+                    <div class="workflow-history-scroll">
+                        @if (_history.Count == 0)
+                        {
+                            <div class="workflow-empty-state">No workflow history yet.</div>
+                        }
+                        else
+                        {
+                            <table class="workflow-history-table">
+                                <thead>
+                                    <tr><th>Started</th><th>Workflow</th><th>Robot</th><th>Step</th><th>Status</th><th>Message</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var entry in _history)
+                                    {
+                                        <tr>
+                                            <td>@entry.StartedAt.ToLocalTime().ToString("HH:mm:ss")</td>
+                                            <td class="workflow-history-cell-sans">@entry.WorkflowName</td>
+                                            <td>@entry.RobotId</td>
+                                            <td>@(entry.StepSequence is null ? "-" : $"{entry.StepSequence}: {entry.StepName}")</td>
+                                            <td><span class="workflow-status-chip @GetHistoryStatusClass(entry.Status)">@entry.Status</span></td>
+                                            <td class="workflow-history-cell-sans">@entry.Message</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                </section>
+            </div>
         </main>
     </div>
 </section>
@@ -368,6 +426,10 @@
     private bool _isBusy;
     private bool _isDirty;
     private bool _isLoading = true;
+    private Guid? _lastRuntimeRunId;
+    private DateTimeOffset? _lastRuntimeEventAt;
+    private string? _lastRuntimeEventMessage;
+    private Timer? _runtimeClock;
 
     private IReadOnlyList<WorkflowSummaryDto> FilteredWorkflows => _workflows.Where(item => string.IsNullOrWhiteSpace(_searchText)
         || item.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
@@ -386,6 +448,15 @@
     {
         await TelemetryClient.StartAsync();
         TelemetryClient.TelemetryReceived += HandleTelemetry;
+        _runtimeClock = new Timer(_ =>
+        {
+            if (_selectedTab != "Runtime" || _activeRun is null)
+            {
+                return;
+            }
+
+            _ = InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         await LoadAsync();
     }
     private async Task LoadAsync()
@@ -428,6 +499,27 @@
         _activeRun = string.IsNullOrWhiteSpace(_selectedRobotId) ? null : await ApiClient.GetActiveWorkflowRunAsync(_selectedRobotId);
         _history.Clear();
         _history.AddRange(await ApiClient.GetWorkflowHistoryAsync(_selectedRobotId));
+
+        if (_activeRun is null)
+        {
+            _lastRuntimeRunId = null;
+            var latestEntry = _history.FirstOrDefault();
+            _lastRuntimeEventAt = latestEntry?.CompletedAt ?? latestEntry?.StartedAt;
+            _lastRuntimeEventMessage = latestEntry?.Message;
+            return;
+        }
+
+        if (_lastRuntimeRunId != _activeRun.Id)
+        {
+            _lastRuntimeRunId = _activeRun.Id;
+            _lastRuntimeEventAt = GetRuntimeEventTimestamp();
+            _lastRuntimeEventMessage = GetFallbackRuntimeEventMessage();
+        }
+        else
+        {
+            _lastRuntimeEventAt ??= GetRuntimeEventTimestamp();
+            _lastRuntimeEventMessage ??= GetFallbackRuntimeEventMessage();
+        }
     }
 
     private async Task SelectWorkflowAsync(Guid workflowId)
@@ -828,18 +920,111 @@
                 ? "Saved"
                 : $"Saved {FormatUpdated(_selectedWorkflow.UpdatedAt)}";
     private string GetWorkflowStateLabel() => _activeRun is not null ? _activeRun.Status.ToString() : _selectedWorkflow is null ? "No selection" : _validationResult?.IsValid == false ? "Invalid" : _selectedWorkflow.IsPublished ? "Published" : "Draft";
-    private string GetWorkflowStateChipClass() => _activeRun is not null ? GetHistoryStatusClass(_activeRun.Status) : _selectedWorkflow is null ? "workflow-chip-muted" : _validationResult?.IsValid == false ? "workflow-chip-warn" : _selectedWorkflow.IsPublished ? "workflow-chip-ok" : "workflow-chip-muted";
+    private string GetWorkflowStateChipClass() => _activeRun is not null ? GetWorkflowStatusClass(_activeRun.Status) : _selectedWorkflow is null ? "workflow-chip-muted" : _validationResult?.IsValid == false ? "workflow-chip-warn" : _selectedWorkflow.IsPublished ? "workflow-chip-ok" : "workflow-chip-muted";
     private string GetGatewayLabel() => _gatewayHealth is null ? "Gateway unavailable" : string.IsNullOrWhiteSpace(_gatewayHealth.Message) ? _gatewayHealth.BaseUrl : _gatewayHealth.Message;
-    private string GetValidationSummary() => _validationResult is null ? "Validation has not run yet." : $"{_validationResult.Issues.Count(issue => string.Equals(issue.Severity, "Error", StringComparison.OrdinalIgnoreCase))} errors Â· {_validationResult.Issues.Count(issue => !string.Equals(issue.Severity, "Error", StringComparison.OrdinalIgnoreCase))} warnings.";
+    private string GetWorkflowCatalogMeta(WorkflowSummaryDto workflow)
+        => $"{workflow.Name.ToLowerInvariant().Replace(' ', '-')} • {workflow.StepCount} steps • {FormatUpdated(workflow.UpdatedAt)}";
+
+    private static string GetStepMeta(WorkflowStepDto step)
+        => $"{step.TaskChainName} • timeout {step.TimeoutSeconds} s • retry x{step.RetryCount} • {step.FailurePolicy}";
+
+    private string GetValidationSummary() => _validationResult is null ? "Validation has not run yet." : $"{_validationResult.Issues.Count(issue => string.Equals(issue.Severity, "Error", StringComparison.OrdinalIgnoreCase))} errors • {_validationResult.Issues.Count(issue => !string.Equals(issue.Severity, "Error", StringComparison.OrdinalIgnoreCase))} warnings.";
     private string GetValidationMessage() => _validationResult is null ? string.Empty : _validationResult.Issues.Count == 0 ? "Workflow is valid against the current task chain catalog." : string.Join(" ", _validationResult.Issues.Take(3).Select(issue => issue.Message));
-    private string GetActiveStepLabel() => _activeRun?.Steps.FirstOrDefault(step => step.Sequence == _activeRun.CurrentStepSequence) is { } step ? $"{step.Sequence}: {(string.IsNullOrWhiteSpace(step.DisplayName) ? step.TaskChainName : step.DisplayName)}" : "No active step";
-    private string? GetActiveStepMessage() => _activeRun?.Steps.FirstOrDefault(step => step.Sequence == _activeRun.CurrentStepSequence)?.Message;
-    private static string GetHistoryStatusClass(WorkflowExecutionStatus status) => status switch
+    private WorkflowRunStepDto? ActiveRunStep => _activeRun?.Steps.FirstOrDefault(step => step.Sequence == _activeRun.CurrentStepSequence)
+        ?? _activeRun?.Steps.OrderBy(step => step.Sequence).FirstOrDefault(step => step.Status is WorkflowStepExecutionStatus.Starting or WorkflowStepExecutionStatus.Waiting or WorkflowStepExecutionStatus.Running or WorkflowStepExecutionStatus.Paused);
+    private string GetActiveStepLabel() => ActiveRunStep is { } step ? $"{step.Sequence}: {(string.IsNullOrWhiteSpace(step.DisplayName) ? step.TaskChainName : step.DisplayName)}" : "No active step";
+    private string? GetActiveStepMessage() => ActiveRunStep?.Message;
+    private string GetRuntimeHeaderLabel() => _activeRun?.Status switch
+    {
+        WorkflowExecutionStatus.Starting or WorkflowExecutionStatus.Running => "Workflow Running",
+        WorkflowExecutionStatus.Paused => "Workflow Paused",
+        WorkflowExecutionStatus.Completed => "Workflow Completed",
+        WorkflowExecutionStatus.Failed => "Workflow Failed",
+        WorkflowExecutionStatus.Canceled => "Workflow Canceled",
+        _ => "Workflow Idle"
+    };
+    private string GetRuntimeWorkflowName() => _activeRun?.WorkflowName ?? _selectedWorkflow?.Name ?? "No workflow selected";
+    private string GetRuntimeStartedSummary() => _activeRun is null ? $"on {(_selectedRobotId ?? "No robot")} • awaiting run" : $"on {_activeRun.RobotId} • started {_activeRun.StartedAt.ToLocalTime():HH:mm:ss}";
+    private string GetRuntimeElapsed() => _activeRun is null ? "00:00 elapsed" : $"{FormatElapsed(DateTimeOffset.UtcNow - _activeRun.StartedAt)} elapsed";
+    private string GetRuntimeRunSurfaceClass() => _activeRun?.Status switch
+    {
+        WorkflowExecutionStatus.Starting or WorkflowExecutionStatus.Running => "workflow-runtime-running-live",
+        WorkflowExecutionStatus.Paused => "workflow-runtime-running-paused",
+        WorkflowExecutionStatus.Completed => "workflow-runtime-running-complete",
+        WorkflowExecutionStatus.Failed or WorkflowExecutionStatus.Canceled => "workflow-runtime-running-error",
+        _ => "workflow-runtime-running-idle"
+    };
+    private string GetRuntimeStepSurfaceClass() => ActiveRunStep?.Status switch
+    {
+        WorkflowStepExecutionStatus.Running or WorkflowStepExecutionStatus.Starting or WorkflowStepExecutionStatus.Waiting => "workflow-runtime-active-live",
+        WorkflowStepExecutionStatus.Completed => "workflow-runtime-active-complete",
+        WorkflowStepExecutionStatus.Paused => "workflow-runtime-active-paused",
+        WorkflowStepExecutionStatus.Failed or WorkflowStepExecutionStatus.Canceled or WorkflowStepExecutionStatus.TimedOut => "workflow-runtime-active-error",
+        _ => "workflow-runtime-active-idle"
+    };
+    private string GetRuntimeStepTitle() => ActiveRunStep is { } step ? $"{step.Sequence:00} · {(string.IsNullOrWhiteSpace(step.DisplayName) ? step.TaskChainName : step.DisplayName)}" : "No active step";
+    private string GetRuntimeStepChain() => ActiveRunStep?.TaskChainName ?? "Waiting for the next taskchain dispatch.";
+    private string GetRuntimeStepStatusLabel() => ActiveRunStep?.Status.ToString().ToUpperInvariant() ?? (_activeRun?.Status.ToString().ToUpperInvariant() ?? "IDLE");
+    private string GetRuntimeStepStatusClass() => ActiveRunStep?.Status switch
+    {
+        WorkflowStepExecutionStatus.Running or WorkflowStepExecutionStatus.Starting or WorkflowStepExecutionStatus.Waiting => "workflow-status-running",
+        WorkflowStepExecutionStatus.Completed => "workflow-status-ready",
+        WorkflowStepExecutionStatus.Failed or WorkflowStepExecutionStatus.Canceled or WorkflowStepExecutionStatus.TimedOut => "workflow-status-error",
+        WorkflowStepExecutionStatus.Paused => "workflow-status-draft",
+        _ => "workflow-status-draft"
+    };
+    private string GetRuntimeProgressLabel()
+    {
+        if (_activeRun is null || _activeRun.Steps.Count == 0)
+        {
+            return "No active progress";
+        }
+
+        var currentStep = ActiveRunStep?.Sequence ?? _activeRun.CurrentStepSequence ?? Math.Min(_activeRun.Steps.Count, _activeRun.Steps.Count(step => step.Status == WorkflowStepExecutionStatus.Completed) + 1);
+        return $"Step {Math.Clamp(currentStep, 1, _activeRun.Steps.Count)} of {_activeRun.Steps.Count}";
+    }
+
+    private double GetRuntimeProgressPercent()
+    {
+        if (_activeRun is null || _activeRun.Steps.Count == 0)
+        {
+            return 0;
+        }
+
+        if (_activeRun.Status == WorkflowExecutionStatus.Completed)
+        {
+            return 100;
+        }
+
+        if (ActiveRunStep?.ProgressPercent is double stepProgress)
+        {
+            return Math.Clamp(stepProgress, 0, 100);
+        }
+
+        var completedSteps = _activeRun.Steps.Count(step => step.Status == WorkflowStepExecutionStatus.Completed);
+        return Math.Clamp((double)completedSteps / _activeRun.Steps.Count * 100, 0, 100);
+    }
+
+    private string GetRuntimeProgressPercentText() => $"{Math.Round(GetRuntimeProgressPercent())}%";
+    private string GetRuntimeProgressStyle() => $"width: {GetRuntimeProgressPercent():0.##}%;";
+    private string GetRuntimeLastEventTime() => (_lastRuntimeEventAt ?? GetRuntimeEventTimestamp())?.ToLocalTime().ToString("HH:mm:ss") ?? "--:--:--";
+    private string GetRuntimeLastEventMessage() => string.IsNullOrWhiteSpace(_lastRuntimeEventMessage) ? "Waiting for runtime updates." : _lastRuntimeEventMessage;
+    private DateTimeOffset? GetRuntimeEventTimestamp() => ActiveRunStep?.CompletedAt ?? ActiveRunStep?.StartedAt ?? _activeRun?.StartedAt;
+    private string GetFallbackRuntimeEventMessage() => GetActiveStepMessage() ?? _activeRun?.ErrorMessage ?? "Waiting for runtime updates.";
+    private static string GetWorkflowStatusClass(WorkflowExecutionStatus status) => status switch
     {
         WorkflowExecutionStatus.Completed => "workflow-status-ready",
         WorkflowExecutionStatus.Failed or WorkflowExecutionStatus.Canceled => "workflow-status-error",
         WorkflowExecutionStatus.Paused => "workflow-status-draft",
         WorkflowExecutionStatus.Running or WorkflowExecutionStatus.Starting => "workflow-status-running",
+        _ => "workflow-status-draft"
+    };
+    private static string GetHistoryStatusClass(WorkflowStepExecutionStatus status) => status switch
+    {
+        WorkflowStepExecutionStatus.Completed => "workflow-status-ready",
+        WorkflowStepExecutionStatus.Failed or WorkflowStepExecutionStatus.Canceled or WorkflowStepExecutionStatus.TimedOut => "workflow-status-error",
+        WorkflowStepExecutionStatus.Running or WorkflowStepExecutionStatus.Starting or WorkflowStepExecutionStatus.Waiting => "workflow-status-running",
+        WorkflowStepExecutionStatus.Paused => "workflow-status-draft",
         _ => "workflow-status-draft"
     };
     private void MarkDirty() => _isDirty = true;
@@ -851,6 +1036,16 @@
         if (age < TimeSpan.FromHours(1)) return $"{Math.Max(1, (int)age.TotalMinutes)}m ago";
         if (age < TimeSpan.FromDays(1)) return $"{Math.Max(1, (int)age.TotalHours)}h ago";
         return $"{Math.Max(1, (int)age.TotalDays)}d ago";
+    }
+
+    private static string FormatElapsed(TimeSpan elapsed)
+    {
+        if (elapsed.TotalHours >= 1)
+        {
+            return $"{(int)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}";
+        }
+
+        return $"{elapsed.Minutes:00}:{elapsed.Seconds:00}";
     }
 
     private void HandleTelemetry(RealtimeEvent telemetry)
@@ -867,6 +1062,12 @@
 
         _ = InvokeAsync(async () =>
         {
+            _lastRuntimeRunId = telemetry.WorkflowRun.Id;
+            _lastRuntimeEventAt = telemetry.OccurredAt;
+            _lastRuntimeEventMessage = telemetry.WorkflowRun.Steps.FirstOrDefault(step => step.Sequence == telemetry.WorkflowRun.CurrentStepSequence)?.Message
+                ?? telemetry.Message
+                ?? telemetry.WorkflowRun.ErrorMessage
+                ?? _lastRuntimeEventMessage;
             _activeRun = telemetry.WorkflowRun;
             await RefreshRuntimeAsync();
             StateHasChanged();
@@ -875,6 +1076,7 @@
 
     public void Dispose()
     {
+        _runtimeClock?.Dispose();
         TelemetryClient.TelemetryReceived -= HandleTelemetry;
     }
 }

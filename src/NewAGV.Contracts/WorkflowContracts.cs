@@ -150,6 +150,7 @@ public record WorkflowRunStepDto
     public WorkflowFailurePolicy FailurePolicy { get; set; } = WorkflowFailurePolicy.StopWorkflow;
     public string? Note { get; set; }
     public WorkflowStepExecutionStatus Status { get; set; } = WorkflowStepExecutionStatus.Pending;
+    public string? TaskChainRunId { get; set; }
     public string? SeerTaskId { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
@@ -184,7 +185,7 @@ public record WorkflowHistoryEntryDto
     public string RobotId { get; set; } = string.Empty;
     public int? StepSequence { get; set; }
     public string? StepName { get; set; }
-    public WorkflowExecutionStatus Status { get; set; } = WorkflowExecutionStatus.Pending;
+    public WorkflowStepExecutionStatus Status { get; set; } = WorkflowStepExecutionStatus.Pending;
     public string? Message { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }

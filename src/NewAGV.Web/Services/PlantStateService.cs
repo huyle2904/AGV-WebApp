@@ -17,6 +17,7 @@ public sealed class PlantStateService(
     public List<ControlPolicy> Policies { get; } = [];
     public List<SeerTaskChainSummary> TaskChains { get; } = [];
     public TaskChainRunSnapshot? ActiveTaskChainRun { get; private set; }
+    public WorkflowRunDto? ActiveWorkflowRun { get; private set; }
     public SiteHealth Health { get; private set; } = new(false, false, ConnectivityStatus.Offline, "Waiting for API.", 0, DateTimeOffset.UtcNow);
     public bool IsInitialized { get; private set; }
 
@@ -51,6 +52,7 @@ public sealed class PlantStateService(
         await RefreshPoliciesAsync(cancellationToken);
         await RefreshTaskChainsAsync(cancellationToken);
         await RefreshActiveTaskChainRunAsync(cancellationToken);
+        await RefreshActiveWorkflowRunAsync(cancellationToken);
         Health = await apiClient.GetHealthAsync(cancellationToken);
         Changed?.Invoke();
     }
@@ -103,6 +105,12 @@ public sealed class PlantStateService(
         Changed?.Invoke();
     }
 
+    public async Task RefreshActiveWorkflowRunAsync(CancellationToken cancellationToken = default)
+    {
+        ActiveWorkflowRun = await apiClient.GetActiveWorkflowRunAsync(cancellationToken);
+        Changed?.Invoke();
+    }
+
     private void ApplyTelemetry(RealtimeEvent telemetry)
     {
         switch (telemetry.EventType)
@@ -140,6 +148,9 @@ public sealed class PlantStateService(
                 }
 
                 _ = RefreshAuditSafelyAsync();
+                break;
+            case var eventType when eventType.StartsWith("workflow.", StringComparison.OrdinalIgnoreCase):
+                ActiveWorkflowRun = telemetry.WorkflowRun;
                 break;
         }
 

@@ -93,8 +93,6 @@
 .nav-icon-home::before { content: "\E80F"; }
 .nav-icon-map::before { content: "\E9D9"; }
 .nav-icon-command::before { content: "\E756"; }
-.nav-icon-config::before { content: "\E713"; }
-.nav-icon-audit::before { content: "\E8A5"; }
 
 .nav-collapse-btn {
     flex: 0 0 38px;

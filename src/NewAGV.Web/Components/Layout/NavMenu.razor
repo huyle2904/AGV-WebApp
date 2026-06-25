@@ -28,14 +28,6 @@
             <span class="nav-icon nav-icon-workflow" aria-hidden="true"></span>
             @if (!IsCollapsed) { <span>Workflow</span> }
         </NavLink>
-        <NavLink href="configuration" class="@NavLinkClass">
-            <span class="nav-icon nav-icon-config" aria-hidden="true"></span>
-            @if (!IsCollapsed) { <span>Cấu hình</span> }
-        </NavLink>
-        <NavLink href="audit" class="@NavLinkClass">
-            <span class="nav-icon nav-icon-audit" aria-hidden="true"></span>
-            @if (!IsCollapsed) { <span>Nhật ký</span> }
-        </NavLink>
     </nav>
 
     <button type="button" class="nav-collapse-btn @(IsCollapsed ? "collapsed" : "")" @onclick="Toggle" title="Thu gọn thanh bên">
