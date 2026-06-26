@@ -96,6 +96,52 @@ public sealed class SeerWorkerClient(HttpClient httpClient, IOptions<Integration
     public async Task<MissionCommandResult> CancelTaskChainAsync(CancellationToken cancellationToken)
         => await PostControlAsync("internal/taskchains/cancel", MissionCommandType.Cancel, cancellationToken);
 
+    public async Task<WorkerWorkflowRuntimeResult> StartWorkflowAsync(
+        WorkerWorkflowStartRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await PostAsync<WorkerWorkflowRuntimeResult>(
+            $"internal/workflows/{request.WorkflowDefinitionId}/start",
+            request,
+            cancellationToken);
+
+        return result ?? CreateRejectedWorkflowResult("Worker returned no workflow start payload.");
+    }
+
+    public async Task<WorkerWorkflowRuntimeResult> PauseWorkflowAsync(
+        WorkerWorkflowControlRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await PostAsync<WorkerWorkflowRuntimeResult>("internal/workflows/pause", request, cancellationToken);
+        return result ?? CreateRejectedWorkflowResult("Worker returned no workflow pause payload.");
+    }
+
+    public async Task<WorkerWorkflowRuntimeResult> ResumeWorkflowAsync(
+        WorkerWorkflowControlRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await PostAsync<WorkerWorkflowRuntimeResult>("internal/workflows/resume", request, cancellationToken);
+        return result ?? CreateRejectedWorkflowResult("Worker returned no workflow resume payload.");
+    }
+
+    public async Task<WorkerWorkflowRuntimeResult> CancelWorkflowAsync(
+        WorkerWorkflowControlRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await PostAsync<WorkerWorkflowRuntimeResult>("internal/workflows/cancel", request, cancellationToken);
+        return result ?? CreateRejectedWorkflowResult("Worker returned no workflow cancel payload.");
+    }
+
+    public async Task<WorkerWorkflowRuntimeStatus> GetActiveWorkflowRunAsync(string? robotId, CancellationToken cancellationToken)
+    {
+        var path = string.IsNullOrWhiteSpace(robotId)
+            ? "internal/workflows/active-run"
+            : $"internal/workflows/active-run?robotId={Uri.EscapeDataString(robotId)}";
+
+        return await GetAsync<WorkerWorkflowRuntimeStatus>(path, cancellationToken)
+            ?? new WorkerWorkflowRuntimeStatus { RobotId = robotId };
+    }
+
     private async Task<MissionCommandResult> PostControlAsync(string path, MissionCommandType commandType, CancellationToken cancellationToken)
     {
         var result = await PostAsync<MissionCommandResult>(path, new { }, cancellationToken);
@@ -108,6 +154,13 @@ public sealed class SeerWorkerClient(HttpClient httpClient, IOptions<Integration
             DateTimeOffset.UtcNow,
             DateTimeOffset.UtcNow);
     }
+
+    private static WorkerWorkflowRuntimeResult CreateRejectedWorkflowResult(string message)
+        => new()
+        {
+            Outcome = WorkerWorkflowRuntimeOutcome.Rejected,
+            Message = message
+        };
 
     private async Task<T?> GetAsync<T>(string path, CancellationToken cancellationToken)
     {

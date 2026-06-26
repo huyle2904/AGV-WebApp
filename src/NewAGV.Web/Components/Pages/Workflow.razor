@@ -885,26 +885,46 @@
         => string.IsNullOrWhiteSpace(SelectedStep?.TaskChainName) ? "No taskchain selected" : SelectedStep.TaskChainName;
 
     private string GetSelectedTaskChainStatusLabel()
-        => SelectedTaskChainSummary?.LastKnownStatus?.ToString().ToUpperInvariant() ?? "READY";
+        => SelectedTaskChainSummary?.Availability switch
+        {
+            "MissingFromSource" => "MISSING",
+            "Stale" => "STALE",
+            _ => SelectedTaskChainSummary?.LastKnownStatus?.ToString().ToUpperInvariant() ?? "READY"
+        };
 
     private string GetSelectedTaskChainSummaryLine()
     {
-        var createdOn = SelectedTaskChainSummary?.CreatedOn?.ToLocalTime().ToString("HH:mm");
-        return createdOn is null
-            ? "Last run data unavailable."
-            : $"Last sync {createdOn}. Status snapshot available.";
+        if (SelectedTaskChainSummary is null)
+        {
+            return "Taskchain is not present in the durable catalog yet.";
+        }
+
+        var syncedAt = SelectedTaskChainSummary.LastSyncedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "unknown";
+        return $"{GetSelectedTaskChainAvailabilityLabel()} / synced {syncedAt}.";
     }
 
     private string GetSelectedTaskChainNote()
     {
-        var taskStatus = SelectedTaskChainSummary?.LastKnownStatus;
-        if (taskStatus is null)
+        if (SelectedTaskChainSummary is null)
         {
-            return "Preview reflects the latest taskchain catalog entry from AGV API.";
+            return "Preview reflects the durable taskchain catalog used by workflow validation.";
         }
 
-        return $"Latest known status from catalog: {taskStatus}. Use Runtime tab for live execution details.";
+        return SelectedTaskChainSummary.Availability switch
+        {
+            "MissingFromSource" => "Taskchain is missing from the AGV source catalog. Validation will block execution until re-synced.",
+            "Stale" => "Catalog data is stale. Re-sync the taskchain catalog before dispatching this workflow.",
+            _ => $"Latest known status from catalog: {SelectedTaskChainSummary.LastKnownStatus?.ToString() ?? "Unknown"}. Use Runtime tab for live execution details."
+        };
     }
+
+    private string GetSelectedTaskChainAvailabilityLabel() => SelectedTaskChainSummary?.Availability switch
+    {
+        "MissingFromSource" => "Missing from source",
+        "Stale" => "Stale catalog",
+        "Available" => "Available",
+        _ => "Unknown availability"
+    };
 
     private string GetWorkflowStateIcon()
         => _activeRun?.Status is WorkflowExecutionStatus.Starting or WorkflowExecutionStatus.Running

@@ -57,4 +57,19 @@ public sealed class InternalSyncController(
 
         return Accepted();
     }
+
+    [HttpPost("workflow")]
+    public async Task<ActionResult> UpdateWorkflow([FromBody] InternalWorkflowRunUpdate update, CancellationToken cancellationToken)
+    {
+        await hubContext.Clients.All.SendAsync(
+            "ReceiveTelemetry",
+            new RealtimeEvent(
+                update.EventType,
+                DateTimeOffset.UtcNow,
+                WorkflowRun: update.WorkflowRun,
+                Message: update.Message),
+            cancellationToken);
+
+        return Accepted();
+    }
 }

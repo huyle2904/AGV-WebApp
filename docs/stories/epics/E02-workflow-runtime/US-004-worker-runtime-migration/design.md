@@ -145,3 +145,20 @@ Future slices:
 3. Give Worker direct PostgreSQL access immediately.
    - Deferred. It may be correct, but it should be decided in a separate slice
      because it affects deployment/configuration and persistence ownership.
+
+## Persistence Decision
+
+Slice 5A accepted `docs/decisions/0010-worker-runtime-persistence-path.md`.
+
+Worker workflow runtime will persist directly to PostgreSQL through a future
+neutral persistence layer shared by API and Worker. Worker must not reference
+`NewAGV.Api` to reuse `NewAgvDbContext`.
+
+Ownership split after that extraction:
+
+- API keeps workflow definition CRUD, public run queries, and Web-facing
+  realtime fan-out.
+- Worker owns workflow runtime writes for run creation, step progression,
+  pause/resume/cancel, failure policy, and reconciliation.
+- Database schema changes, including the active-execution guard, remain separate
+  implementation slices.

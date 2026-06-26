@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using NewAGV.Api.Data;
+using NewAGV.Persistence;
 
 namespace NewAGV.Api.Services;
 
@@ -45,6 +45,7 @@ public sealed class DatabaseInitializationService(
             "ALTER TABLE IF EXISTS app.workflow_runs ADD COLUMN IF NOT EXISTS \"CurrentStepSequence\" integer;",
             "ALTER TABLE IF EXISTS app.workflow_runs ADD COLUMN IF NOT EXISTS \"CanceledBy\" character varying(80);",
             "ALTER TABLE IF EXISTS app.workflow_runs ADD COLUMN IF NOT EXISTS \"ValidationSnapshotJson\" jsonb;",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_workflow_runs_active_robot ON app.workflow_runs (\"RobotId\") WHERE \"Status\" IN ('Pending', 'Validating', 'Ready', 'Starting', 'Running', 'Paused');",
 
             "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"DisplayName\" character varying(160);",
             "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"TimeoutSeconds\" integer NOT NULL DEFAULT 0;",
@@ -53,7 +54,24 @@ public sealed class DatabaseInitializationService(
             "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"Note\" character varying(1000);",
             "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"TaskChainRunId\" character varying(80);",
             "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"ProgressPercent\" double precision;",
-            "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"Info\" character varying(1000);"
+            "ALTER TABLE IF EXISTS app.workflow_run_steps ADD COLUMN IF NOT EXISTS \"Info\" character varying(1000);",
+
+            """
+            CREATE TABLE IF NOT EXISTS app.taskchain_snapshots (
+                "Id" uuid PRIMARY KEY,
+                "Name" character varying(120) NOT NULL,
+                "ExternalId" character varying(120),
+                "Availability" character varying(40) NOT NULL,
+                "LastKnownStatus" character varying(40),
+                "SourceState" character varying(40),
+                "CreatedOnSource" timestamptz,
+                "LastSyncedAt" timestamptz NOT NULL,
+                "LastSeenAt" timestamptz,
+                "MissingSince" timestamptz
+            );
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_taskchain_snapshots_name ON app.taskchain_snapshots (\"Name\");",
+            "CREATE INDEX IF NOT EXISTS ix_taskchain_snapshots_availability_last_synced ON app.taskchain_snapshots (\"Availability\", \"LastSyncedAt\");"
         };
 
         foreach (var statement in statements)

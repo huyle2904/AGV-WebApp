@@ -15,6 +15,9 @@ public sealed class ApiSyncClient(HttpClient httpClient, IOptions<SeerRobotOptio
     public Task PushHealthAsync(SiteHealth health, CancellationToken cancellationToken)
         => PostAsync("internal/sync/health", health, cancellationToken);
 
+    public Task PushWorkflowAsync(InternalWorkflowRunUpdate update, CancellationToken cancellationToken)
+        => PostAsync("internal/sync/workflow", update, cancellationToken);
+
     private async Task PostAsync<T>(string path, T payload, CancellationToken cancellationToken)
     {
         var url = $"{options.Value.ApiBaseUrl.TrimEnd('/')}/{path}";

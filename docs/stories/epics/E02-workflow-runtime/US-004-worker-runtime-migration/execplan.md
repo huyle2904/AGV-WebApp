@@ -77,6 +77,22 @@ Hard gates:
    - Slice 7: Remove or retire API-owned runtime progression after Worker path is
      proven.
 
+   Current continuation after Slice 4B:
+   - Slice 5A: Accepted persistence path in ADR-0010. Worker runtime will write
+     PostgreSQL through a future neutral persistence layer shared with API; no
+     schema or runtime behavior change in this slice.
+   - Slice 5B: Add Worker start orchestration skeleton that validates intent and
+     prepares the persistence boundary without dispatching duplicate SEER
+     commands.
+   - Slice 6: Extract or introduce the neutral persistence layer and keep schema
+     behavior compatible.
+   - Slice 7: Add durable active-run guard and Worker happy-path start.
+   - Slice 8: Move Worker pause/resume/cancel runtime behavior.
+   - Slice 9: Add feature-flagged Worker monitoring/progression.
+   - Slice 10: Add Worker-to-API workflow realtime bridge.
+   - Slice 11: Close US-004 with Worker runtime implemented but kept
+     feature-flagged off by default until live PostgreSQL/SEER smoke proof.
+
 5. Verification.
    - Build solution after each slice.
    - Run existing app smoke where feasible.
@@ -86,6 +102,23 @@ Hard gates:
 6. Harness update.
    - Update story status/proof after each slice.
    - Record friction or missing tooling in Harness backlog.
+
+## Closure Decision
+
+Human selected `Keep feature flag off` for the final runtime activation gate.
+
+US-004 closes with Worker runtime ownership implemented behind explicit API and
+Worker feature flags:
+
+- API can route workflow start/pause/resume/cancel to Worker when
+  `Integration:UseWorkerWorkflowRuntime=true`.
+- Worker owns runtime persistence, first-step dispatch, controls, monitoring,
+  progression, failure policy handling, and realtime sync when its matching
+  flag is enabled.
+- Default appsettings keep both flags `false` because this repo does not yet
+  have live PostgreSQL/SEER smoke proof for enabling Worker runtime by default.
+- API-owned runtime remains as the default/fallback compatibility path and is
+  not retired in US-004.
 
 ## Stop Conditions
 

@@ -177,6 +177,13 @@ public record WorkflowRunDto
     public IReadOnlyList<WorkflowRunStepDto> Steps { get; set; } = Array.Empty<WorkflowRunStepDto>();
 }
 
+public record InternalWorkflowRunUpdate
+{
+    public string EventType { get; set; } = "workflow.updated";
+    public WorkflowRunDto WorkflowRun { get; set; } = new();
+    public string? Message { get; set; }
+}
+
 public record WorkflowHistoryEntryDto
 {
     public Guid RunId { get; set; }
@@ -194,4 +201,44 @@ public record WorkflowHistoryEntryDto
 public record WorkflowControlRequest
 {
     public string RobotId { get; set; } = string.Empty;
+}
+
+public enum WorkerWorkflowRuntimeOutcome
+{
+    Accepted,
+    Rejected,
+    AlreadyActive,
+    NotFound,
+    ValidationFailed,
+    Unknown
+}
+
+public record WorkerWorkflowStartRequest
+{
+    public Guid WorkflowDefinitionId { get; set; }
+    public string RobotId { get; set; } = string.Empty;
+    public string? TriggeredBy { get; set; }
+}
+
+public record WorkerWorkflowControlRequest
+{
+    public string RobotId { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+}
+
+public record WorkerWorkflowRuntimeResult
+{
+    public WorkerWorkflowRuntimeOutcome Outcome { get; set; }
+    public string? Message { get; set; }
+    public Guid? RunId { get; set; }
+}
+
+public record WorkerWorkflowRuntimeStatus
+{
+    public Guid? ActiveRunId { get; set; }
+    public Guid? WorkflowDefinitionId { get; set; }
+    public string? RobotId { get; set; }
+    public WorkflowExecutionStatus? Status { get; set; }
+    public int? CurrentStepSequence { get; set; }
+    public DateTimeOffset? StartedAt { get; set; }
 }

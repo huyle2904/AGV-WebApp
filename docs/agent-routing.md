@@ -1,160 +1,148 @@
-# Agent Routing Guide
+# Codex Model Routing Guide
 
 Status: active  
-Applies to: NewAGV development with Codex Desktop and OpenCode/Mimo v2.5
+Applies to: NewAGV development in Codex Desktop
 
 ## Purpose
 
-This guide defines how to route work between:
+This guide defines how to choose a Codex model tier for NewAGV work.
 
-- Codex Desktop / GPT 5.5 for reasoning, architecture, planning, review, and
-  Harness records.
-- OpenCode / Mimo v2.5 for bounded code-editing slices.
+All work now happens inside Codex. Do not hand off code edits to external
+models such as OpenCode/Mimo by default. The routing decision is only about how
+much reasoning power to use for the current task.
 
-The goal is to keep code changes fast without letting implementation models make
-architecture decisions implicitly.
+The goal is to spend strong reasoning where mistakes would be expensive, while
+using smaller models for bounded edits, validation, and documentation cleanup.
 
-## Default Roles
+## Model Tiers
 
-| Agent | Use for | Do not use for |
+| Tier | Use for | Avoid for |
 | --- | --- | --- |
-| Codex Desktop / GPT 5.5 | SPEC analysis, gap analysis, ADRs, story slicing, high-risk design, review, Harness trace/matrix updates | Large mechanical edits when a bounded implementation slice is already clear |
-| OpenCode / Mimo v2.5 | Small scoped code edits, additive DTOs, endpoint skeletons, UI/CSS fixes, mechanical refactors, simple tests | Architecture decisions, broad refactors, public contract changes without a story, Harness ownership |
+| GPT 5.5 xhigh | Architecture changes, safety-critical AGV behavior, database/persistence direction, public API contract changes, workflow runtime ownership, complex refactors with unclear blast radius, incident/debugging work where root cause is unknown | Mechanical edits after the design is already locked |
+| GPT 5.5 high | Story slicing, ADRs, SPEC/gap reasoning, high-risk implementation planning, review of broad diffs, migration sequencing, test strategy for behavior-moving slices | Tiny copy/docs edits, simple one-file fixes |
+| GPT 5.4 low | Bounded implementation slices with a clear story, allowed files, forbidden files, and validation command; simple refactors; adding DTO/client methods; narrow UI fixes; routine build-fix loops | Architecture decisions, safety gates, DB migrations, ambiguous behavior changes |
+| GPT 5.4 mini | Formatting, typo fixes, small markdown updates, simple search/summarize tasks, mechanical rename after an exact plan is written, low-risk validation reruns | Multi-file behavior changes, anything touching AGV commands, workflow runtime, database, or public API behavior |
 
-## Routing Rules
+Model names can change over time. If the exact model is unavailable, choose the
+closest available model with the same reasoning posture.
 
-Use Codex Desktop / GPT 5.5 when the work touches:
+## Default Routing Rules
 
-- Architecture direction.
-- Database design or migrations.
-- Workflow runtime ownership.
-- API/Worker responsibility.
-- Safety gates or SEER command behavior.
-- Public API contract.
-- Multi-file refactor with uncertain behavior.
-- Story creation, ADR creation, or Harness records.
+Use GPT 5.5 xhigh when the task touches any of these hard gates:
 
-Use Mimo v2.5 only when:
+- SEER command safety, duplicate command prevention, or AGV motion behavior.
+- Workflow runtime ownership or runtime progression.
+- Database schema, migrations, persistence ownership, or data loss risk.
+- Public API route shape, response meaning, or Web-visible behavior.
+- Auth, authorization, audit/security, or operator safety.
+- A failed build/test where the cause is unclear after one quick inspection.
 
-- A story packet or handoff file already exists.
-- The allowed and forbidden files are listed.
-- The goal is one bounded slice.
-- Validation command is specified.
-- Public behavior changes are either forbidden or explicitly described.
+Use GPT 5.5 high when the task is not a hard gate but still needs design:
 
-## Standard Flow
+- Creating or updating ADRs.
+- Turning SPEC intent into stories or implementation slices.
+- Reviewing model-generated or broad diffs.
+- Planning tests for behavior-moving workflow slices.
+- Deciding whether a slice is safe to implement.
+- Updating Harness policy or routing rules.
 
-1. Codex creates or updates the story packet.
-2. Codex writes a `mimo-handoff.md` file for the current slice.
-3. User opens OpenCode and selects Mimo v2.5.
-4. Mimo reads the handoff and implements only that slice.
-5. Mimo runs the requested build/test command.
-6. Mimo updates only the allowed evidence section, usually `validation.md`.
-7. User returns to Codex Desktop and asks for review.
-8. Codex reviews the diff, checks scope, runs validation if needed, updates
-   Harness records, and decides the next slice.
+Use GPT 5.4 low when the task is already bounded:
 
-## Mimo Prompt Template
+- The relevant story exists.
+- The intended behavior is clear.
+- Allowed and forbidden files are known.
+- Validation command is known.
+- The patch should not introduce new architecture.
 
-Use this pattern in OpenCode:
+Use GPT 5.4 mini only for tiny tasks:
 
-```text
-Read <path-to-mimo-handoff.md> and implement only the requested slice.
+- Markdown spelling or wording cleanup.
+- Renaming headings.
+- Running simple commands and reporting output.
+- Updating evidence text after stronger-model review.
+- Searching for file locations or exact symbols.
 
-Do not make architecture decisions.
-Do not change public behavior unless the handoff explicitly says so.
-Do not edit files outside the allowed list.
-Run the validation command from the handoff.
+## Harness Lane Mapping
 
-After coding:
-- update only the evidence location named in the handoff
-- do not run harness-cli
-- do not mark the story complete
+| Harness lane | Default model | Escalate when |
+| --- | --- | --- |
+| Tiny | GPT 5.4 mini or GPT 5.4 low | The tiny task unexpectedly touches code behavior, public contracts, or persistence |
+| Normal | GPT 5.4 low | The story is underspecified, spans multiple domains, or changes validation expectations |
+| High-risk | GPT 5.5 high | Use GPT 5.5 xhigh for hard gates, safety, database, public API, or unclear runtime behavior |
 
-Report:
-- files changed
-- validation command
-- validation result
-- skipped work
-- any uncertainty
-```
+Harness lane is the process risk. Model tier is the reasoning budget. If they
+disagree, prefer the stronger model.
 
-## Mimo Output Requirements
+## Standard Codex Flow
 
-Mimo should report:
+1. Read `AGENTS.md` and the Harness documents listed there.
+2. Record intake with `scripts/bin/harness-cli`.
+3. Check the story matrix.
+4. Choose the model tier from this guide.
+5. For normal/high-risk work, keep the story packet current before coding.
+6. Implement directly in Codex, using the repo's existing patterns.
+7. Run the validation command appropriate to the slice.
+8. Update validation evidence and Harness records.
+9. Record a trace.
 
-- Files changed.
-- Build/test command run.
-- Build/test result.
-- Any warnings or errors.
-- Work intentionally not implemented.
-- Any ambiguity or blocked point.
+## Bounded Slice Checklist
 
-Mimo may update:
+A slice is safe for GPT 5.4 low only when all items are true:
 
-- The slice's `validation.md` acceptance evidence section, if the handoff allows
-  it.
+- The expected change can be described in one paragraph.
+- The files to edit are known before editing starts.
+- The files not to edit are also clear.
+- No new ADR is needed.
+- No database migration is needed.
+- No public behavior changes unless explicitly requested.
+- The validation command is known.
+- The fallback if validation fails is to stop and escalate, not to improvise.
 
-Mimo must not update:
+If any item is false, use GPT 5.5 high or GPT 5.5 xhigh.
 
-- Harness CLI records.
-- Story final status.
-- ADR status.
-- Gap analysis conclusions.
-- Product source-of-truth docs, unless the handoff explicitly allows it.
+## Stop And Escalate Conditions
 
-## Codex Review Checklist
+Escalate to GPT 5.5 high or xhigh before continuing if:
 
-After Mimo finishes, Codex should check:
+- A small edit reveals hidden architecture coupling.
+- A build failure points to unclear ownership between API, Worker, Web, or
+  Contracts.
+- A patch might send duplicate commands to the AGV.
+- A fix requires changing PostgreSQL schema or runtime persistence ownership.
+- Existing behavior must change to satisfy the SPEC.
+- The current story packet no longer matches the code reality.
+- Validation proof would need to be weakened.
 
-- Did Mimo edit only allowed files?
-- Did public Web/API behavior remain stable when required?
-- Did Mimo avoid architecture decisions?
-- Did build/test pass?
-- Did Mimo update evidence in the allowed place only?
-- Does the patch match the story acceptance criteria?
-- Should the story remain `in_progress`, move to `implemented`, or spawn the
-  next slice?
+## New Session Prompt
 
-Codex then updates:
-
-- `validation.md` if evidence needs correction.
-- Harness story status/proof via `scripts/bin/harness-cli`.
-- Harness trace.
-- Backlog if friction or missing capability appears.
-
-## Current Active Handoff
-
-Current story:
+Use this when starting a fresh Codex session:
 
 ```text
-docs/stories/epics/E02-workflow-runtime/US-004-worker-runtime-migration/
+Work in C:\Users\TD-997\Documents\NewAGV.
+
+Read AGENTS.md and follow Harness. Also read docs/agent-routing.md before
+choosing a model tier.
+
+All work happens in Codex now. Do not hand off to OpenCode/Mimo. Choose model
+tier by risk:
+- GPT 5.5 xhigh/high for architecture, workflow runtime, AGV safety, DB,
+  public API, ADRs, story slicing, and review.
+- GPT 5.4 low for bounded code slices with clear files and validation.
+- GPT 5.4 mini for tiny docs/search/mechanical work.
+
+Start with Harness intake, query matrix, then continue the selected story or
+task.
 ```
 
-Current Mimo handoff:
+## Current Project Bias
 
-```text
-docs/stories/epics/E02-workflow-runtime/US-004-worker-runtime-migration/mimo-handoff.md
-```
+NewAGV currently has several high-risk areas:
 
-Current OpenCode prompt:
+- Workflow runtime is being moved from API to Worker.
+- PostgreSQL is the accepted product database.
+- The Worker owns SEER TCP integration and side-effecting AGV commands.
+- Public Web/API behavior should remain stable during migration slices.
 
-```text
-Read docs/stories/epics/E02-workflow-runtime/US-004-worker-runtime-migration/mimo-handoff.md and implement only Slice 1.
-
-Do not change public Web/API behavior.
-Do not move runtime logic.
-Only add additive contracts and Worker internal endpoint skeletons.
-Run dotnet build NewAGV.sln and report files changed plus result.
-```
-
-## Stop Conditions
-
-Stop and return to Codex Desktop before coding if:
-
-- The handoff is missing or unclear.
-- The slice requires editing forbidden files.
-- The implementation needs a new database migration not listed in the handoff.
-- The implementation would change public routes, DTO meanings, or UI behavior.
-- There is a risk of sending duplicate commands to SEER AGV.
-- Build/test requires new external services or credentials.
+Default to GPT 5.5 high or xhigh for workflow runtime migration planning and
+review. Use GPT 5.4 low only for tightly bounded implementation slices after
+the plan is explicit.

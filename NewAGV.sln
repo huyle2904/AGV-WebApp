@@ -11,6 +11,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NewAGV.Web", "src\NewAGV.We
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NewAGV.Worker", "src\NewAGV.Worker\NewAGV.Worker.csproj", "{A3B4B02F-E021-4B43-99CC-EDFACA88F623}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{BF795850-5CA9-44CA-B92D-C886C8FE0DA5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NewAGV.Persistence", "src\NewAGV.Persistence\NewAGV.Persistence.csproj", "{642B1F04-015C-4830-8731-33BD1ACDB7BA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,8 +73,23 @@ Global
 		{A3B4B02F-E021-4B43-99CC-EDFACA88F623}.Release|x64.Build.0 = Release|Any CPU
 		{A3B4B02F-E021-4B43-99CC-EDFACA88F623}.Release|x86.ActiveCfg = Release|Any CPU
 		{A3B4B02F-E021-4B43-99CC-EDFACA88F623}.Release|x86.Build.0 = Release|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Debug|x64.Build.0 = Debug|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Debug|x86.Build.0 = Debug|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Release|x64.ActiveCfg = Release|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Release|x64.Build.0 = Release|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Release|x86.ActiveCfg = Release|Any CPU
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{642B1F04-015C-4830-8731-33BD1ACDB7BA} = {BF795850-5CA9-44CA-B92D-C886C8FE0DA5}
 	EndGlobalSection
 EndGlobal

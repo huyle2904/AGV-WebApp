@@ -6,17 +6,37 @@ namespace NewAGV.Api.Services;
 
 public sealed class TaskChainCoordinator(
     TaskChainStore store,
+    TaskChainCatalogService catalogService,
     AgvPlantStore plantStore,
     SeerWorkerClient workerClient,
     IHubContext<TelemetryHub> hubContext)
 {
     private static readonly TimeSpan UnknownTaskIdThreshold = TimeSpan.FromSeconds(10);
+    private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     public async Task<IReadOnlyList<SeerTaskChainSummary>> GetTaskChainsAsync(CancellationToken cancellationToken)
     {
-        var taskChains = await workerClient.GetTaskChainsAsync(cancellationToken);
-        store.ReplaceTaskChains(taskChains);
-        return store.GetTaskChains();
+        var taskChains = await catalogService.GetTaskChainsAsync(cancellationToken);
+        if (taskChains.Count > 0)
+        {
+            return taskChains;
+        }
+
+        return await SyncTaskChainsAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SeerTaskChainSummary>> SyncTaskChainsAsync(CancellationToken cancellationToken)
+    {
+        await _syncLock.WaitAsync(cancellationToken);
+        try
+        {
+            var taskChains = await workerClient.GetTaskChainsAsync(cancellationToken);
+            return await catalogService.SyncAsync(taskChains, cancellationToken);
+        }
+        finally
+        {
+            _syncLock.Release();
+        }
     }
 
     public async Task<SeerTaskChainStatus?> GetTaskChainStatusAsync(string taskChainName, CancellationToken cancellationToken)
@@ -25,6 +45,7 @@ public sealed class TaskChainCoordinator(
         if (status is not null)
         {
             store.UpdateTaskChainStatus(taskChainName, status.TaskListStatus);
+            await catalogService.UpdateTaskChainStatusAsync(taskChainName, status.TaskListStatus, cancellationToken);
         }
 
         return status;

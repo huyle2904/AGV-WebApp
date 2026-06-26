@@ -1,16 +1,23 @@
+using Microsoft.EntityFrameworkCore;
 using NewAGV.Contracts;
+using NewAGV.Persistence;
 using NewAGV.Worker;
 using NewAGV.Worker.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<SeerRobotOptions>(builder.Configuration.GetSection(SeerRobotOptions.SectionName));
+builder.Services.Configure<WorkerIntegrationOptions>(builder.Configuration.GetSection(WorkerIntegrationOptions.SectionName));
 builder.Services.AddHttpClient<ApiSyncClient>();
+builder.Services.AddDbContext<NewAgvDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("NewAgvDb")));
 builder.Services.AddSingleton<SeerTcpClient>();
 builder.Services.AddSingleton<SeerRobotMapper>();
 builder.Services.AddSingleton<SeerCommandService>();
 builder.Services.AddSingleton<SeerTaskChainService>();
+builder.Services.AddScoped<WorkerWorkflowRuntimeService>();
 builder.Services.AddHostedService<SeerIntegrationWorker>();
+builder.Services.AddHostedService<WorkerWorkflowMonitorService>();
 
 var app = builder.Build();
 
@@ -98,6 +105,52 @@ app.MapPost("/internal/taskchains/cancel", async (
     CancellationToken cancellationToken) =>
 {
     var result = await taskChainService.CancelAsync(cancellationToken);
+    return Results.Json(result);
+});
+
+app.MapPost("/internal/workflows/{workflowId}/start", async (
+    Guid workflowId,
+    WorkerWorkflowStartRequest request,
+    WorkerWorkflowRuntimeService workflowRuntimeService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await workflowRuntimeService.StartAsync(workflowId, request, cancellationToken);
+    return Results.Json(result);
+});
+
+app.MapPost("/internal/workflows/pause", async (
+    WorkerWorkflowControlRequest request,
+    WorkerWorkflowRuntimeService workflowRuntimeService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await workflowRuntimeService.PauseAsync(request, cancellationToken);
+    return Results.Json(result);
+});
+
+app.MapPost("/internal/workflows/resume", async (
+    WorkerWorkflowControlRequest request,
+    WorkerWorkflowRuntimeService workflowRuntimeService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await workflowRuntimeService.ResumeAsync(request, cancellationToken);
+    return Results.Json(result);
+});
+
+app.MapPost("/internal/workflows/cancel", async (
+    WorkerWorkflowControlRequest request,
+    WorkerWorkflowRuntimeService workflowRuntimeService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await workflowRuntimeService.CancelAsync(request, cancellationToken);
+    return Results.Json(result);
+});
+
+app.MapGet("/internal/workflows/active-run", async (
+    string? robotId,
+    WorkerWorkflowRuntimeService workflowRuntimeService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await workflowRuntimeService.GetActiveRunAsync(robotId, cancellationToken);
     return Results.Json(result);
 });
 

@@ -150,17 +150,17 @@
                                 <div class="ops-card ops-taskchain-stack">
                                     <div class="ops-taskchain-summary-head">
                                         <div class="ops-robot-name">
-                                            <strong>@SelectedTaskChainStatus.TaskListName</strong>
+                                            <strong>@SelectedTaskChainName</strong>
                                             <span>@GetTaskChainMetaLine()</span>
                                         </div>
-                                        <span class="ops-pill-status @GetTaskChainStatusPillClass(SelectedTaskChainStatus.TaskListStatus)">@SelectedTaskChainStatus.TaskListStatus</span>
+                                        <span class="ops-pill-status @GetTaskChainSummaryPillClass(SelectedTaskChainSummary)">@GetTaskChainSummaryLabel(SelectedTaskChainSummary)</span>
                                     </div>
 
                                     <div class="ops-kv-grid">
-                                        <div class="ops-kv"><span>Task ID</span><strong>@(SelectedTaskChainStatus.TaskId ?? "-")</strong></div>
-                                        <div class="ops-kv"><span>Loop</span><strong>@(SelectedTaskChainStatus.Loop is true ? "Yes" : "No")</strong></div>
-                                        <div class="ops-kv"><span>Battery</span><strong>@(SelectedTaskChainStatus.BatteryPercent?.ToString() ?? "-")%</strong></div>
-                                        <div class="ops-kv"><span>Action IDs</span><strong>@FormatActionIds(SelectedTaskChainStatus.ActionIds)</strong></div>
+                                        <div class="ops-kv"><span>TaskList status</span><strong>@(SelectedTaskChainStatus?.TaskListStatus.ToString() ?? "-")</strong></div>
+                                        <div class="ops-kv"><span>Availability</span><strong>@GetTaskChainAvailabilityLabel(SelectedTaskChainSummary)</strong></div>
+                                        <div class="ops-kv"><span>Last synced</span><strong>@FormatTaskChainSyncTime(SelectedTaskChainSummary?.LastSyncedAt)</strong></div>
+                                        <div class="ops-kv"><span>Missing since</span><strong>@FormatTaskChainSyncTime(SelectedTaskChainSummary?.MissingSince)</strong></div>
                                     </div>
                                 </div>
                             }
@@ -324,7 +324,7 @@
                             </div>
                         </div>
 
-                        @if (SelectedTaskChainStatus is null)
+                        @if (SelectedTaskChainSummary is null && SelectedTaskChainStatus is null)
                         {
                             <div class="ops-empty-state">
                                 <strong>No TaskChain detail</strong>
@@ -334,12 +334,17 @@
                         else
                         {
                             <div class="ops-detail-stack">
-                                <div class="ops-kv"><span>Name</span><strong>@SelectedTaskChainStatus.TaskListName</strong></div>
-                                <div class="ops-kv"><span>TaskList status</span><strong>@SelectedTaskChainStatus.TaskListStatus</strong></div>
-                                <div class="ops-kv"><span>Task ID</span><strong>@(SelectedTaskChainStatus.TaskId ?? "-")</strong></div>
-                                <div class="ops-kv"><span>Action group</span><strong>@(SelectedTaskChainStatus.ActionGroupId?.ToString() ?? "-")</strong></div>
-                                <div class="ops-kv"><span>Action IDs</span><strong>@FormatActionIds(SelectedTaskChainStatus.ActionIds)</strong></div>
-                                <div class="ops-kv"><span>Battery</span><strong>@(SelectedTaskChainStatus.BatteryPercent?.ToString() ?? "-")%</strong></div>
+                                <div class="ops-kv"><span>Name</span><strong>@SelectedTaskChainName</strong></div>
+                                <div class="ops-kv"><span>Availability</span><strong>@GetTaskChainAvailabilityLabel(SelectedTaskChainSummary)</strong></div>
+                                <div class="ops-kv"><span>Source state</span><strong>@GetTaskChainSourceStateLabel(SelectedTaskChainSummary)</strong></div>
+                                <div class="ops-kv"><span>Last synced</span><strong>@FormatTaskChainSyncTime(SelectedTaskChainSummary?.LastSyncedAt)</strong></div>
+                                <div class="ops-kv"><span>Missing since</span><strong>@FormatTaskChainSyncTime(SelectedTaskChainSummary?.MissingSince)</strong></div>
+                                <div class="ops-kv"><span>External ID</span><strong>@(SelectedTaskChainSummary?.ExternalId ?? "-")</strong></div>
+                                <div class="ops-kv"><span>TaskList status</span><strong>@(SelectedTaskChainStatus?.TaskListStatus.ToString() ?? "-")</strong></div>
+                                <div class="ops-kv"><span>Task ID</span><strong>@(SelectedTaskChainStatus?.TaskId ?? "-")</strong></div>
+                                <div class="ops-kv"><span>Action group</span><strong>@(SelectedTaskChainStatus?.ActionGroupId?.ToString() ?? "-")</strong></div>
+                                <div class="ops-kv"><span>Action IDs</span><strong>@FormatActionIds(SelectedTaskChainStatus?.ActionIds)</strong></div>
+                                <div class="ops-kv"><span>Battery</span><strong>@(SelectedTaskChainStatus?.BatteryPercent?.ToString() ?? "-")%</strong></div>
                             </div>
                         }
                     </article>
@@ -390,6 +395,11 @@
     private static IReadOnlyList<string> StatusFilters { get; } = ["All", "Ready", "Running", "Attention"];
 
     private RobotSummary? SelectedRobot => State.Robots.FirstOrDefault(robot => robot.RobotId == _request.RobotId);
+    private SeerTaskChainSummary? SelectedTaskChainSummary
+        => string.IsNullOrWhiteSpace(_request.TaskChainName)
+            ? null
+            : State.TaskChains.FirstOrDefault(item => string.Equals(item.Name, _request.TaskChainName, StringComparison.OrdinalIgnoreCase));
+    private string SelectedTaskChainName => SelectedTaskChainStatus?.TaskListName ?? SelectedTaskChainSummary?.Name ?? _request.TaskChainName;
 
     private RobotTelemetryDetail? SelectedRobotDetail
         => string.IsNullOrWhiteSpace(_request.RobotId)
@@ -691,10 +701,19 @@
         => $"{(taskChain.CreatedOn?.ToLocalTime().ToString("HH:mm:ss") ?? "No timestamp")} / {(taskChain.LastKnownStatus?.ToString() ?? "Unknown")}";
 
     private string GetTaskChainMetaLine()
-        => $"{(SelectedTaskChainStatus?.TaskId ?? "No task id")} / {(SelectedTaskChainStatus?.ActionIds.Count ?? 0)} action ids";
+    {
+        if (SelectedTaskChainSummary is null)
+        {
+            return $"{(SelectedTaskChainStatus?.TaskId ?? "No task id")} / {(SelectedTaskChainStatus?.ActionIds.Count ?? 0)} action ids";
+        }
 
-    private static string FormatActionIds(IReadOnlyList<int> actionIds)
-        => actionIds.Count == 0 ? "-" : string.Join(", ", actionIds.Take(6)) + (actionIds.Count > 6 ? "..." : string.Empty);
+        return $"{GetTaskChainAvailabilityLabel(SelectedTaskChainSummary)} / synced {FormatTaskChainSyncTime(SelectedTaskChainSummary.LastSyncedAt)}";
+    }
+
+    private static string FormatActionIds(IReadOnlyList<int>? actionIds)
+        => actionIds is null || actionIds.Count == 0
+            ? "-"
+            : string.Join(", ", actionIds.Take(6)) + (actionIds.Count > 6 ? "..." : string.Empty);
 
     private static bool IsTerminal(TaskChainRunStatus status)
         => status is TaskChainRunStatus.Completed
@@ -741,25 +760,55 @@
         _ => "ops-pill-idle"
     };
 
-    private static string GetTaskChainSummaryDotClass(SeerTaskChainSummary summary) => summary.LastKnownStatus switch
+    private static string GetTaskChainSummaryDotClass(SeerTaskChainSummary summary) => summary.Availability switch
     {
-        TaskChainStatus.Waiting or TaskChainStatus.Running => "ops-dot ops-dot-good",
-        TaskChainStatus.Suspended => "ops-dot ops-dot-warn",
-        TaskChainStatus.Failed or TaskChainStatus.Canceled or TaskChainStatus.OverTime => "ops-dot ops-dot-danger",
-        _ => "ops-dot"
+        "MissingFromSource" => "ops-dot ops-dot-danger",
+        "Stale" => "ops-dot ops-dot-warn",
+        _ => summary.LastKnownStatus switch
+        {
+            TaskChainStatus.Waiting or TaskChainStatus.Running => "ops-dot ops-dot-good",
+            TaskChainStatus.Suspended => "ops-dot ops-dot-warn",
+            TaskChainStatus.Failed or TaskChainStatus.Canceled or TaskChainStatus.OverTime => "ops-dot ops-dot-danger",
+            _ => "ops-dot"
+        }
     };
 
-    private static string GetTaskChainSummaryPillClass(SeerTaskChainSummary summary) => summary.LastKnownStatus switch
+    private static string GetTaskChainSummaryPillClass(SeerTaskChainSummary? summary) => summary?.Availability switch
     {
-        TaskChainStatus.Waiting or TaskChainStatus.Running => "ops-pill-running",
-        TaskChainStatus.Suspended => "ops-pill-paused",
-        TaskChainStatus.Failed or TaskChainStatus.Canceled or TaskChainStatus.OverTime => "ops-pill-danger",
-        TaskChainStatus.Completed or TaskChainStatus.None => "ops-pill-ready",
-        _ => "ops-pill-idle"
+        "MissingFromSource" => "ops-pill-danger",
+        "Stale" => "ops-pill-paused",
+        _ => summary?.LastKnownStatus switch
+        {
+            TaskChainStatus.Waiting or TaskChainStatus.Running => "ops-pill-running",
+            TaskChainStatus.Suspended => "ops-pill-paused",
+            TaskChainStatus.Failed or TaskChainStatus.Canceled or TaskChainStatus.OverTime => "ops-pill-danger",
+            TaskChainStatus.Completed or TaskChainStatus.None => "ops-pill-ready",
+            _ => "ops-pill-idle"
+        } ?? "ops-pill-idle"
     };
 
-    private static string GetTaskChainSummaryLabel(SeerTaskChainSummary summary)
-        => summary.LastKnownStatus?.ToString() ?? "Unknown";
+    private static string GetTaskChainSummaryLabel(SeerTaskChainSummary? summary)
+        => summary?.Availability switch
+    {
+        "MissingFromSource" => "Missing",
+        "Stale" => "Stale",
+        _ => summary?.LastKnownStatus?.ToString() ?? "Unknown"
+    };
+
+    private static string GetTaskChainAvailabilityLabel(SeerTaskChainSummary? summary) => summary?.Availability switch
+    {
+        "MissingFromSource" => "Missing from source",
+        "Stale" => "Stale catalog",
+        "Available" => "Available",
+        _ => "Unknown"
+    };
+
+    private static string GetTaskChainSourceStateLabel(SeerTaskChainSummary? summary) => string.IsNullOrWhiteSpace(summary?.SourceState)
+        ? "Unknown"
+        : summary.SourceState!;
+
+    private static string FormatTaskChainSyncTime(DateTimeOffset? value)
+        => value?.ToLocalTime().ToString("HH:mm:ss") ?? "-";
 
     private static string GetConnectivityChipClass(ConnectivityStatus status) => status switch
     {

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using NewAGV.Api.Data;
 using NewAGV.Api.Hubs;
 using NewAGV.Api.Services;
+using NewAGV.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,6 +16,7 @@ builder.Services.AddSingleton<AgvPlantStore>();
 builder.Services.AddSingleton<TaskChainStore>();
 builder.Services.AddSingleton<CommandDispatcher>();
 builder.Services.AddSingleton<TaskChainCoordinator>();
+builder.Services.AddScoped<TaskChainCatalogService>();
 builder.Services.AddScoped<WorkflowDefinitionService>();
 builder.Services.AddScoped<WorkflowValidationService>();
 builder.Services.AddScoped<WorkflowExecutionService>();

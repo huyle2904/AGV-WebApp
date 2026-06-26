@@ -1,9 +1,10 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using NewAGV.Api.Data;
+using Microsoft.Extensions.Options;
 using NewAGV.Api.Hubs;
 using NewAGV.Contracts;
+using NewAGV.Persistence;
 
 namespace NewAGV.Api.Services;
 
@@ -13,7 +14,9 @@ public sealed class WorkflowExecutionService(
     WorkflowValidationService validationService,
     TaskChainCoordinator taskChainCoordinator,
     AgvPlantStore plantStore,
-    IHubContext<TelemetryHub> hubContext)
+    IHubContext<TelemetryHub> hubContext,
+    IOptions<IntegrationOptions> integrationOptions,
+    SeerWorkerClient workerClient)
 {
     private static readonly string[] ActiveRunStatuses =
     [
@@ -70,6 +73,11 @@ public sealed class WorkflowExecutionService(
             throw new InvalidOperationException("Another TaskChain is already active on this robot.");
         }
 
+        if (integrationOptions.Value.UseWorkerWorkflowRuntime)
+        {
+            return await ExecuteWithWorkerRuntimeAsync(workflowId, request, cancellationToken);
+        }
+
         var definition = await dbContext.WorkflowDefinitions
             .Include(item => item.Steps.OrderBy(step => step.Sequence))
             .FirstAsync(item => item.Id == workflowId, cancellationToken);
@@ -104,6 +112,34 @@ public sealed class WorkflowExecutionService(
         await EmitAsync("workflow.started", run, cancellationToken);
         await StartNextPendingStepAsync(run.Id, requestedByRole, cancellationToken);
         return (await GetRunAsync(run.Id, cancellationToken))!;
+    }
+
+    private async Task<WorkflowRunDto> ExecuteWithWorkerRuntimeAsync(
+        Guid workflowId,
+        ExecuteWorkflowRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await workerClient.StartWorkflowAsync(
+            new WorkerWorkflowStartRequest
+            {
+                WorkflowDefinitionId = workflowId,
+                RobotId = request.RobotId.Trim(),
+                TriggeredBy = NormalizeOptional(request.TriggeredBy)
+            },
+            cancellationToken);
+
+        if (result.Outcome != WorkerWorkflowRuntimeOutcome.Accepted)
+        {
+            throw new InvalidOperationException(result.Message ?? $"Worker workflow runtime rejected start with outcome {result.Outcome}.");
+        }
+
+        if (result.RunId is null)
+        {
+            throw new InvalidOperationException("Worker workflow runtime accepted start without a run id.");
+        }
+
+        return await GetRunAsync(result.RunId.Value, cancellationToken)
+            ?? throw new InvalidOperationException("Worker workflow runtime accepted start, but the run was not found.");
     }
 
     public async Task<WorkflowRunDto?> GetRunAsync(Guid runId, CancellationToken cancellationToken)
@@ -172,6 +208,17 @@ public sealed class WorkflowExecutionService(
     public async Task<WorkflowRunDto> PauseAsync(WorkflowControlRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
     {
         var run = await RequireActiveRunAsync(request.RobotId, cancellationToken);
+
+        if (integrationOptions.Value.UseWorkerWorkflowRuntime)
+        {
+            await SendWorkerWorkflowControlAsync(
+                run,
+                "pause",
+                workerClient.PauseWorkflowAsync,
+                cancellationToken);
+            return (await GetRunAsync(run.Id, cancellationToken))!;
+        }
+
         var result = await taskChainCoordinator.PauseAsync(new TaskChainControlRequest { RobotId = run.RobotId }, requestedByRole, cancellationToken);
         if (result.Status == MissionCommandStatus.Rejected)
         {
@@ -185,6 +232,17 @@ public sealed class WorkflowExecutionService(
     public async Task<WorkflowRunDto> ResumeAsync(WorkflowControlRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
     {
         var run = await RequireActiveRunAsync(request.RobotId, cancellationToken);
+
+        if (integrationOptions.Value.UseWorkerWorkflowRuntime)
+        {
+            await SendWorkerWorkflowControlAsync(
+                run,
+                "resume",
+                workerClient.ResumeWorkflowAsync,
+                cancellationToken);
+            return (await GetRunAsync(run.Id, cancellationToken))!;
+        }
+
         var result = await taskChainCoordinator.ResumeAsync(new TaskChainControlRequest { RobotId = run.RobotId }, requestedByRole, cancellationToken);
         if (result.Status == MissionCommandStatus.Rejected)
         {
@@ -198,6 +256,17 @@ public sealed class WorkflowExecutionService(
     public async Task<WorkflowRunDto> CancelAsync(WorkflowControlRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
     {
         var run = await RequireActiveRunAsync(request.RobotId, cancellationToken);
+
+        if (integrationOptions.Value.UseWorkerWorkflowRuntime)
+        {
+            await SendWorkerWorkflowControlAsync(
+                run,
+                "cancel",
+                workerClient.CancelWorkflowAsync,
+                cancellationToken);
+            return (await GetRunAsync(run.Id, cancellationToken))!;
+        }
+
         var result = await taskChainCoordinator.CancelAsync(new TaskChainControlRequest { RobotId = run.RobotId }, requestedByRole, cancellationToken);
         if (result.Status == MissionCommandStatus.Rejected)
         {
@@ -208,8 +277,32 @@ public sealed class WorkflowExecutionService(
         return (await GetRunAsync(run.Id, cancellationToken))!;
     }
 
+    private static async Task SendWorkerWorkflowControlAsync(
+        WorkflowRunEntity run,
+        string action,
+        Func<WorkerWorkflowControlRequest, CancellationToken, Task<WorkerWorkflowRuntimeResult>> sendAsync,
+        CancellationToken cancellationToken)
+    {
+        var result = await sendAsync(
+            new WorkerWorkflowControlRequest
+            {
+                RobotId = run.RobotId
+            },
+            cancellationToken);
+
+        if (result.Outcome != WorkerWorkflowRuntimeOutcome.Accepted)
+        {
+            throw new InvalidOperationException(result.Message ?? $"Worker workflow runtime rejected {action} with outcome {result.Outcome}.");
+        }
+    }
+
     public async Task MonitorActiveRunsAsync(CancellationToken cancellationToken)
     {
+        if (integrationOptions.Value.UseWorkerWorkflowRuntime)
+        {
+            return;
+        }
+
         var activeRuns = await dbContext.WorkflowRuns
             .Include(item => item.WorkflowDefinition)
             .Include(item => item.Steps.OrderBy(step => step.Sequence))
