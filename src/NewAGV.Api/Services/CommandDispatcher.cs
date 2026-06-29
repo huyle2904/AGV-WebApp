@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.SignalR;
-using NewAGV.Api.Hubs;
 using NewAGV.Contracts;
 
 namespace NewAGV.Api.Services;
@@ -7,7 +5,9 @@ namespace NewAGV.Api.Services;
 public sealed class CommandDispatcher(
     AgvPlantStore store,
     SeerWorkerClient workerClient,
-    IHubContext<TelemetryHub> hubContext)
+    TelemetryEventPublisher telemetryPublisher,
+    AuditLogService auditLogService,
+    MapSnapshotService mapSnapshotService)
 {
     public async Task<MissionCommandResult> DispatchAsync(MissionCommandRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
     {
@@ -42,7 +42,7 @@ public sealed class CommandDispatcher(
         {
             workerRequest = request.CommandType switch
             {
-                MissionCommandType.GoToStation => ValidateRouteCommand(request),
+                MissionCommandType.GoToStation => await ValidateRouteCommandAsync(request, cancellationToken),
                 _ => request
             };
         }
@@ -68,31 +68,38 @@ public sealed class CommandDispatcher(
                 DateTimeOffset.UtcNow);
         }
 
-        store.AddAudit(new MissionAuditEntry(
+        await auditLogService.RecordAuditAsync(new MissionAuditEntry(
             Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
             request.RobotId,
             request.CommandType,
             requestedByRole,
             result.Message,
             result.Status,
-            result.CompletedAt));
+            result.CompletedAt),
+            cancellationToken);
 
-        await hubContext.Clients.All.SendAsync(
-            "ReceiveTelemetry",
+        await auditLogService.RecordCommandAttemptAsync(
+            workerRequest,
+            requestedByRole,
+            result,
+            "api.commands.dispatch",
+            cancellationToken);
+
+        await telemetryPublisher.PublishAsync(
             new RealtimeEvent("command.ack", DateTimeOffset.UtcNow, Command: result, Message: result.Message),
             cancellationToken);
 
         return result;
     }
 
-    private MissionCommandRequest ValidateRouteCommand(MissionCommandRequest request)
+    private async Task<MissionCommandRequest> ValidateRouteCommandAsync(MissionCommandRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.TargetEntityId))
         {
             throw new InvalidOperationException("Target entity is required for GoToStation and ReturnToHome commands.");
         }
 
-        var targetEntity = store.GetMapEntity(request.TargetEntityId);
+        var targetEntity = await mapSnapshotService.GetEntityAsync(request.TargetEntityId, cancellationToken);
         if (targetEntity is null || targetEntity.Type != MapEntityType.Station)
         {
             throw new InvalidOperationException("Target station is not available.");
@@ -168,17 +175,24 @@ public sealed class CommandDispatcher(
             requestedAt,
             DateTimeOffset.UtcNow);
 
-        store.AddAudit(new MissionAuditEntry(
+        await auditLogService.RecordAuditAsync(new MissionAuditEntry(
             Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
             request.RobotId,
             request.CommandType,
             requestedByRole,
             message,
             MissionCommandStatus.Rejected,
-            result.CompletedAt));
+            result.CompletedAt),
+            cancellationToken);
 
-        await hubContext.Clients.All.SendAsync(
-            "ReceiveTelemetry",
+        await auditLogService.RecordCommandAttemptAsync(
+            request,
+            requestedByRole,
+            result,
+            "api.commands.dispatch",
+            cancellationToken);
+
+        await telemetryPublisher.PublishAsync(
             new RealtimeEvent("command.ack", DateTimeOffset.UtcNow, Command: result, Message: result.Message),
             cancellationToken);
 

@@ -1,12 +1,10 @@
-using Microsoft.AspNetCore.SignalR;
-using NewAGV.Api.Hubs;
 using NewAGV.Contracts;
 
 namespace NewAGV.Api.Services;
 
 public sealed class TelemetrySimulationService(
     AgvPlantStore store,
-    IHubContext<TelemetryHub> hubContext,
+    TelemetryEventPublisher telemetryPublisher,
     ILogger<TelemetrySimulationService> logger) : BackgroundService
 {
     private int _tick;
@@ -24,8 +22,7 @@ public sealed class TelemetrySimulationService(
                     var updatedRobot = AdvanceRobot(robot);
                     store.UpdateRobot(updatedRobot);
 
-                    await hubContext.Clients.All.SendAsync(
-                        "ReceiveTelemetry",
+                    await telemetryPublisher.PublishAsync(
                         new RealtimeEvent("robot.updated", DateTimeOffset.UtcNow, Robot: updatedRobot),
                         stoppingToken);
                 }
@@ -41,8 +38,7 @@ public sealed class TelemetrySimulationService(
 
                 store.UpdateHealth(health);
 
-                await hubContext.Clients.All.SendAsync(
-                    "ReceiveTelemetry",
+                await telemetryPublisher.PublishAsync(
                     new RealtimeEvent("health.updated", DateTimeOffset.UtcNow, Health: health, Message: health.Message),
                     stoppingToken);
             }

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using NewAGV.Api.Data;
 using NewAGV.Api.Hubs;
 using NewAGV.Api.Services;
+using NewAGV.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,8 +14,12 @@ builder.Services.AddDbContext<NewAgvDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("NewAgvDb")));
 builder.Services.AddSingleton<AgvPlantStore>();
 builder.Services.AddSingleton<TaskChainStore>();
-builder.Services.AddSingleton<CommandDispatcher>();
-builder.Services.AddSingleton<TaskChainCoordinator>();
+builder.Services.AddSingleton<TelemetryEventPublisher>();
+builder.Services.AddScoped<AuditLogService>();
+builder.Services.AddScoped<MapSnapshotService>();
+builder.Services.AddScoped<CommandDispatcher>();
+builder.Services.AddScoped<TaskChainCoordinator>();
+builder.Services.AddScoped<TaskChainCatalogService>();
 builder.Services.AddScoped<WorkflowDefinitionService>();
 builder.Services.AddScoped<WorkflowValidationService>();
 builder.Services.AddScoped<WorkflowExecutionService>();

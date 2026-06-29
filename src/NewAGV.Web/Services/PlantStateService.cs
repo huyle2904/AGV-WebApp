@@ -9,6 +9,9 @@ public sealed class PlantStateService(
 {
     private bool _telemetryHooked;
     private bool _taskChainsRefreshInFlight;
+    private bool _snapshotRefreshInFlight;
+    private long _lastTelemetrySequence;
+    private int _lastSchemaVersion;
 
     public List<RobotSummary> Robots { get; } = [];
     public Dictionary<string, RobotTelemetryDetail> RobotDetails { get; } = [];
@@ -17,6 +20,7 @@ public sealed class PlantStateService(
     public List<ControlPolicy> Policies { get; } = [];
     public List<SeerTaskChainSummary> TaskChains { get; } = [];
     public TaskChainRunSnapshot? ActiveTaskChainRun { get; private set; }
+    public WorkflowRunDto? ActiveWorkflowRun { get; private set; }
     public SiteHealth Health { get; private set; } = new(false, false, ConnectivityStatus.Offline, "Waiting for API.", 0, DateTimeOffset.UtcNow);
     public bool IsInitialized { get; private set; }
 
@@ -34,6 +38,7 @@ public sealed class PlantStateService(
         if (!_telemetryHooked)
         {
             telemetryClient.TelemetryReceived += ApplyTelemetry;
+            telemetryClient.TelemetryResynced += HandleTelemetryResynced;
             await telemetryClient.StartAsync(cancellationToken);
             _telemetryHooked = true;
         }
@@ -51,6 +56,7 @@ public sealed class PlantStateService(
         await RefreshPoliciesAsync(cancellationToken);
         await RefreshTaskChainsAsync(cancellationToken);
         await RefreshActiveTaskChainRunAsync(cancellationToken);
+        await RefreshActiveWorkflowRunAsync(cancellationToken);
         Health = await apiClient.GetHealthAsync(cancellationToken);
         Changed?.Invoke();
     }
@@ -103,8 +109,20 @@ public sealed class PlantStateService(
         Changed?.Invoke();
     }
 
+    public async Task RefreshActiveWorkflowRunAsync(CancellationToken cancellationToken = default)
+    {
+        ActiveWorkflowRun = await apiClient.GetActiveWorkflowRunAsync(cancellationToken);
+        Changed?.Invoke();
+    }
+
     private void ApplyTelemetry(RealtimeEvent telemetry)
     {
+        if (ShouldRefreshSnapshot(telemetry))
+        {
+            _ = RefreshSnapshotSafelyAsync("telemetry sequence gap or schema change");
+            return;
+        }
+
         switch (telemetry.EventType)
         {
             case "robot.updated" when telemetry.Robot is not null:
@@ -141,10 +159,48 @@ public sealed class PlantStateService(
 
                 _ = RefreshAuditSafelyAsync();
                 break;
+            case var eventType when eventType.StartsWith("workflow.", StringComparison.OrdinalIgnoreCase):
+                ActiveWorkflowRun = telemetry.WorkflowRun;
+                break;
         }
 
         Changed?.Invoke();
     }
+
+    private bool ShouldRefreshSnapshot(RealtimeEvent telemetry)
+    {
+        if (telemetry.SchemaVersion <= 0)
+        {
+            return false;
+        }
+
+        if (_lastSchemaVersion != 0 && telemetry.SchemaVersion != _lastSchemaVersion)
+        {
+            logger.LogWarning("Telemetry schema changed from {PreviousSchema} to {SchemaVersion}. Refreshing snapshot.", _lastSchemaVersion, telemetry.SchemaVersion);
+            _lastSchemaVersion = telemetry.SchemaVersion;
+            _lastTelemetrySequence = telemetry.Sequence;
+            return true;
+        }
+
+        _lastSchemaVersion = telemetry.SchemaVersion;
+
+        if (telemetry.Sequence > 0 && _lastTelemetrySequence > 0 && telemetry.Sequence != _lastTelemetrySequence + 1)
+        {
+            logger.LogWarning("Telemetry sequence gap detected. Expected {ExpectedSequence} but received {ActualSequence}. Refreshing snapshot.", _lastTelemetrySequence + 1, telemetry.Sequence);
+            _lastTelemetrySequence = telemetry.Sequence;
+            return true;
+        }
+
+        if (telemetry.Sequence > 0)
+        {
+            _lastTelemetrySequence = telemetry.Sequence;
+        }
+
+        return false;
+    }
+
+    private void HandleTelemetryResynced()
+        => _ = RefreshSnapshotSafelyAsync("telemetry hub reconnected");
 
     private async Task RefreshAuditSafelyAsync()
     {
@@ -177,6 +233,29 @@ public sealed class PlantStateService(
         finally
         {
             _taskChainsRefreshInFlight = false;
+        }
+    }
+
+    private async Task RefreshSnapshotSafelyAsync(string reason)
+    {
+        if (_snapshotRefreshInFlight)
+        {
+            return;
+        }
+
+        _snapshotRefreshInFlight = true;
+        try
+        {
+            logger.LogInformation("Refreshing API snapshot after {Reason}.", reason);
+            await RefreshAllAsync();
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Failed to refresh full API snapshot after {Reason}.", reason);
+        }
+        finally
+        {
+            _snapshotRefreshInFlight = false;
         }
     }
 

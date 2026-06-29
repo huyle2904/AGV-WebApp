@@ -1,22 +1,41 @@
-using Microsoft.AspNetCore.SignalR;
-using NewAGV.Api.Hubs;
 using NewAGV.Contracts;
 
 namespace NewAGV.Api.Services;
 
 public sealed class TaskChainCoordinator(
     TaskChainStore store,
+    TaskChainCatalogService catalogService,
     AgvPlantStore plantStore,
     SeerWorkerClient workerClient,
-    IHubContext<TelemetryHub> hubContext)
+    TelemetryEventPublisher telemetryPublisher,
+    AuditLogService auditLogService)
 {
     private static readonly TimeSpan UnknownTaskIdThreshold = TimeSpan.FromSeconds(10);
+    private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     public async Task<IReadOnlyList<SeerTaskChainSummary>> GetTaskChainsAsync(CancellationToken cancellationToken)
     {
-        var taskChains = await workerClient.GetTaskChainsAsync(cancellationToken);
-        store.ReplaceTaskChains(taskChains);
-        return store.GetTaskChains();
+        var taskChains = await catalogService.GetTaskChainsAsync(cancellationToken);
+        if (taskChains.Count > 0)
+        {
+            return taskChains;
+        }
+
+        return await SyncTaskChainsAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SeerTaskChainSummary>> SyncTaskChainsAsync(CancellationToken cancellationToken)
+    {
+        await _syncLock.WaitAsync(cancellationToken);
+        try
+        {
+            var taskChains = await workerClient.GetTaskChainsAsync(cancellationToken);
+            return await catalogService.SyncAsync(taskChains, cancellationToken);
+        }
+        finally
+        {
+            _syncLock.Release();
+        }
     }
 
     public async Task<SeerTaskChainStatus?> GetTaskChainStatusAsync(string taskChainName, CancellationToken cancellationToken)
@@ -25,6 +44,7 @@ public sealed class TaskChainCoordinator(
         if (status is not null)
         {
             store.UpdateTaskChainStatus(taskChainName, status.TaskListStatus);
+            await catalogService.UpdateTaskChainStatusAsync(taskChainName, status.TaskListStatus, cancellationToken);
         }
 
         return status;
@@ -42,33 +62,34 @@ public sealed class TaskChainCoordinator(
         var robot = plantStore.GetRobot(request.RobotId);
         if (robot is null)
         {
-            return RejectAndAudit(request, requestedByRole, "Robot was not found.", requestedAt);
+            return await RejectAndAuditAsync(request, requestedByRole, "Robot was not found.", requestedAt, cancellationToken);
         }
 
         if (!request.Confirmed)
         {
-            return RejectAndAudit(request, requestedByRole, "TaskChain execution requires explicit confirmation.", requestedAt);
+            return await RejectAndAuditAsync(request, requestedByRole, "TaskChain execution requires explicit confirmation.", requestedAt, cancellationToken);
         }
 
         var safetyRejection = BuildSafetyRejection(robot, request.RobotId);
         if (safetyRejection is not null)
         {
-            return RejectAndAudit(request, requestedByRole, safetyRejection, requestedAt);
+            return await RejectAndAuditAsync(request, requestedByRole, safetyRejection, requestedAt, cancellationToken);
         }
 
         var activeRun = store.GetActiveRun(request.RobotId);
         if (activeRun is not null && !IsTerminal(activeRun.Run.Status))
         {
-            return RejectAndAudit(request, requestedByRole, "Another TaskChain is already active on this robot.", requestedAt);
+            return await RejectAndAuditAsync(request, requestedByRole, "Another TaskChain is already active on this robot.", requestedAt, cancellationToken);
         }
 
         var result = await workerClient.ExecuteTaskChainAsync(request, cancellationToken);
-        AddAudit(
+        await AddAuditAsync(
             request.RobotId,
             requestedByRole,
             result.Message,
             result.Status == TaskChainRunStatus.Rejected ? MissionCommandStatus.Rejected : MissionCommandStatus.Accepted,
-            $"TaskChainExecute:{request.TaskChainName}");
+            $"TaskChainExecute:{request.TaskChainName}",
+            cancellationToken);
 
         if (result.Status == TaskChainRunStatus.Rejected)
         {
@@ -78,7 +99,7 @@ public sealed class TaskChainCoordinator(
         var snapshot = new TaskChainRunSnapshot(result, null, null, requestedByRole, DateTimeOffset.UtcNow);
         if (!store.TryStartRun(snapshot))
         {
-            return RejectAndAudit(request, requestedByRole, "Another TaskChain became active before this run started.", requestedAt);
+            return await RejectAndAuditAsync(request, requestedByRole, "Another TaskChain became active before this run started.", requestedAt, cancellationToken);
         }
 
         await EmitAsync("taskchain.started", snapshot, result.Message, cancellationToken);
@@ -173,12 +194,13 @@ public sealed class TaskChainCoordinator(
         if (IsTerminal(status))
         {
             store.CompleteRun(updated);
-            AddAudit(
+            await AddAuditAsync(
                 updated.Run.RobotId,
                 updated.RequestedByRole,
                 updated.Run.Message,
                 ToAuditStatus(status),
-                $"TaskChainExecute:{updated.Run.TaskChainName}");
+                $"TaskChainExecute:{updated.Run.TaskChainName}",
+                cancellationToken);
             await EmitAsync(ToRealtimeEvent(status), updated, updated.Run.Message, cancellationToken);
             return;
         }
@@ -198,7 +220,7 @@ public sealed class TaskChainCoordinator(
     {
         if (string.IsNullOrWhiteSpace(request.RobotId))
         {
-            return new MissionCommandResult(
+            var rejectedResult = new MissionCommandResult(
                 Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
                 string.Empty,
                 commandType,
@@ -206,12 +228,14 @@ public sealed class TaskChainCoordinator(
                 "RobotId is required.",
                 DateTimeOffset.UtcNow,
                 DateTimeOffset.UtcNow);
+            await AddAuditAsync(string.Empty, requestedByRole, rejectedResult.Message, rejectedResult.Status, operation, cancellationToken);
+            return rejectedResult;
         }
 
         var activeRun = store.GetActiveRun(request.RobotId);
         if (activeRun is null || IsTerminal(activeRun.Run.Status))
         {
-            return new MissionCommandResult(
+            var rejectedResult = new MissionCommandResult(
                 Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
                 request.RobotId,
                 commandType,
@@ -219,12 +243,14 @@ public sealed class TaskChainCoordinator(
                 "No active TaskChain run was found.",
                 DateTimeOffset.UtcNow,
                 DateTimeOffset.UtcNow);
+            await AddAuditAsync(request.RobotId, requestedByRole, rejectedResult.Message, rejectedResult.Status, operation, cancellationToken);
+            return rejectedResult;
         }
 
         var robot = plantStore.GetRobot(activeRun.Run.RobotId);
         if (robot is null)
         {
-            return new MissionCommandResult(
+            var rejectedResult = new MissionCommandResult(
                 Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
                 activeRun.Run.RobotId,
                 commandType,
@@ -232,12 +258,14 @@ public sealed class TaskChainCoordinator(
                 "Robot was not found.",
                 DateTimeOffset.UtcNow,
                 DateTimeOffset.UtcNow);
+            await AddAuditAsync(activeRun.Run.RobotId, requestedByRole, rejectedResult.Message, rejectedResult.Status, operation, cancellationToken);
+            return rejectedResult;
         }
 
         var rejection = BuildSafetyRejection(robot, activeRun.Run.RobotId);
         if (rejection is not null && requireFullSafety)
         {
-            return new MissionCommandResult(
+            var rejectedResult = new MissionCommandResult(
                 Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
                 activeRun.Run.RobotId,
                 commandType,
@@ -245,21 +273,24 @@ public sealed class TaskChainCoordinator(
                 rejection,
                 DateTimeOffset.UtcNow,
                 DateTimeOffset.UtcNow);
+            await AddAuditAsync(activeRun.Run.RobotId, requestedByRole, rejectedResult.Message, rejectedResult.Status, operation, cancellationToken);
+            return rejectedResult;
         }
 
         var result = await action(cancellationToken);
-        AddAudit(activeRun.Run.RobotId, requestedByRole, result.Message, result.Status, operation);
+        await AddAuditAsync(activeRun.Run.RobotId, requestedByRole, result.Message, result.Status, operation, cancellationToken);
         return result with { RobotId = activeRun.Run.RobotId };
     }
 
-    private TaskChainRunResult RejectAndAudit(
+    private async Task<TaskChainRunResult> RejectAndAuditAsync(
         TaskChainRunRequest request,
         UserRole requestedByRole,
         string message,
-        DateTimeOffset requestedAt)
+        DateTimeOffset requestedAt,
+        CancellationToken cancellationToken)
     {
         var result = BuildRejectedRun(request, message, requestedAt);
-        AddAudit(request.RobotId, requestedByRole, message, MissionCommandStatus.Rejected, $"TaskChainExecute:{request.TaskChainName}");
+        await AddAuditAsync(request.RobotId, requestedByRole, message, MissionCommandStatus.Rejected, $"TaskChainExecute:{request.TaskChainName}", cancellationToken);
         return result;
     }
 
@@ -313,14 +344,15 @@ public sealed class TaskChainCoordinator(
         return null;
     }
 
-    private void AddAudit(
+    private async Task AddAuditAsync(
         string robotId,
         UserRole requestedByRole,
         string message,
         MissionCommandStatus status,
-        string operation)
+        string operation,
+        CancellationToken cancellationToken)
     {
-        plantStore.AddAudit(new MissionAuditEntry(
+        await auditLogService.RecordAuditAsync(new MissionAuditEntry(
             Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(),
             robotId,
             null,
@@ -328,7 +360,8 @@ public sealed class TaskChainCoordinator(
             message,
             status,
             DateTimeOffset.UtcNow,
-            operation));
+            operation),
+            cancellationToken);
     }
 
     private async Task EmitAsync(
@@ -337,8 +370,7 @@ public sealed class TaskChainCoordinator(
         string message,
         CancellationToken cancellationToken)
     {
-        await hubContext.Clients.All.SendAsync(
-            "ReceiveTelemetry",
+        await telemetryPublisher.PublishAsync(
             new RealtimeEvent(eventType, DateTimeOffset.UtcNow, TaskChainRun: snapshot, Message: message),
             cancellationToken);
     }

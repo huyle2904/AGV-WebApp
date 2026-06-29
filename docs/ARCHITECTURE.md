@@ -1,89 +1,133 @@
-# NewAGV Architecture
+# Architecture
 
-## Muc tieu
+No application stack is selected yet.
 
-NewAGV la he thong giam sat va dieu khien AGV SEER theo huong an toan, de van hanh va mo rong dan. Muc tieu truoc mat khong phai clone toan bo RDS, ma la tao mot nen tang nho, ro rang va dung duoc voi AGV that.
+No application code exists yet. This document defines generic architecture
+questions and boundary rules that future implementation should adapt after a
+user-provided spec and stack decision exist.
 
-## Kien truc tong quan
+## Discovery Before Shape
+
+Before proposing implementation shape, identify:
+
+- Product surfaces: browser, mobile, desktop, CLI, API, worker, or service.
+- Runtime stack: language, framework, database, queues, providers, and hosting.
+- Core domains: the product concepts that deserve stable names and contracts.
+- Boundary inputs: user input, API requests, webhooks, jobs, files, credentials,
+  provider payloads, and environment configuration.
+- Validation ladder: the smallest checks that can prove the selected stack.
+
+Record stack choices in `docs/decisions/` when they meaningfully constrain
+future work.
+
+## Default Layering
 
 ```text
-Operator
--> NewAGV.Web
--> NewAGV.Api
--> NewAGV.Worker
--> SEER AGV TCP API
+domain
+  <- application
+      <- infrastructure
+          <- interface
+              <- app surfaces
 ```
 
-Vai tro tung thanh phan:
+## Candidate Structure
 
-- `NewAGV.Web`
-  - Hien thi AGV Monitor va cac man hinh van hanh.
-  - Chi goi `NewAGV.Api`.
-  - Khong ket noi truc tiep toi robot.
-- `NewAGV.Api`
-  - Cung cap endpoint cho Web.
-  - Giu state, audit va command policy.
-  - Thuc hien safety gate truoc khi day command xuong Worker.
-  - Day cap nhat realtime qua SignalR khi can.
-- `NewAGV.Worker`
-  - Mo ket noi TCP toi robot SEER.
-  - Poll trang thai va gui command.
-  - Dong bo snapshot nguoc len API.
-- `NewAGV.Contracts`
-  - Chua model dung chung giua cac lop.
+```text
+app/
+  domain/
+    entities/
+    value-objects/
+    repositories/
+    services/
 
-## Tich hop SEER
+  application/
+    commands/
+    queries/
+    handlers/
 
-SEER dung TCP nhị phan ket hop JSON payload cho cac API cot loi. Browser khong nen giao tiep truc tiep toi AGV. Backend la noi giu ket noi va xu ly protocol.
+  infrastructure/
+    database/
+    logging/
+    notifications/
 
-Cac nhom API quan trong cho pham vi hien tai:
+  interface/
+    controllers/
+    dto/
+    presenters/
+    routes/
+    middlewares/
 
-- Status: vi tri, pin, e-stop, localization, alarm, navigation status
-- Map: current map, station list
-- Command: pause, resume, cancel, relocation, goto station
-- Push/polling: uu tien hybrid, poll de bootstrap va push de realtime khi co the
+surfaces/
+  browser/
+  mobile/
+  desktop/
+  cli/
+```
 
-## Nguyen tac van hanh va safety
+This is a thinking template, not a scaffold. Create real folders only when a
+story enters implementation and the selected stack needs them.
 
-- Khong dua placeholder giong du lieu that vao UI.
-- Khong coi raw station tu AGV la route target hop le neu chua duoc xac nhan.
-- Khong gui command nguy hiem khi chua qua safety gate.
-- Web chi noi chuyen voi API; API moi duoc noi voi Worker.
-- Mọi command that can ghi audit va tra ket qua ro rang.
+## Dependency Rule
 
-Safety gate toi thieu truoc khi gui command di chuyen:
+Inner layers must not depend on outer layers.
 
-- Robot online
-- Co telemetry hop le
-- Khong e-stop
-- Khong bi control owner lock
-- Khong co fatal/error alarm
-- Localization san sang
-- Target hop le neu la command goto
+| Layer | May depend on | Must not depend on |
+| --- | --- | --- |
+| domain | nothing project-external except tiny pure utilities | framework, database, UI, provider, process/env |
+| application | domain | framework, UI, provider, database concrete clients |
+| infrastructure | domain, application | interface controllers or UI |
+| interface | all backend layers | UI state or platform shell assumptions |
+| app surfaces | API contracts and app-facing clients | domain internals directly |
 
-## Pham vi command hien tai
+## Parse-First Boundary Rule
 
-Nen uu tien an toan va kha nang van hanh:
+Unknown data must be parsed at boundaries before it enters inner code.
 
-- Uu tien cho phep: `Pause`, `Resume`, `Cancel`
-- `GoToStation` chi nen bat khi da co target da validate va quy trinh test that
-- Teleop/open-loop motion chi danh cho Engineer/Admin, hoac tam thoi tat hoan toan cho den khi policy va payload duoc xac minh day du
+Boundaries include:
 
-## AGV Monitor
+- HTTP request bodies, params, and query strings.
+- Session payloads and identity claims.
+- Environment variables.
+- Database rows returned from external clients.
+- Platform shell payloads.
+- Deep links, tokens, and signed URLs.
+- Provider webhooks, events, and async payloads.
 
-AGV Monitor la man hinh van hanh trung tam cho 1 AGV that. Nguoi dung can nhin vao 1 trang de biet:
+Target flow:
 
-- Robot co online khong
-- Robot dang o dau tren map
-- Pin, e-stop, localization, alarm, control owner dang ra sao
-- Co san sang nhan command khong
-- Vi sao command dang bi chan neu he thong chua san sang
+```text
+unknown input
+  -> parser
+  -> typed DTO or command
+  -> application use case
+  -> domain object/value object
+```
 
-## Huong to chuc repo
+Inner layers should work with meaningful product types such as `UserId`,
+`AccountId`, `WorkspaceId`, `Role`, `DateRange`, or domain-specific IDs,
+rather than repeatedly validating raw strings.
 
-- `README.md`: diem vao nhanh cho nguoi moi
-- `docs/ARCHITECTURE.md`: kien truc, SEER integration, command safety
-- `docs/ROADMAP.md`: phase phat trien va uu tien tiep theo
-- `docs/CHANGELOG.md`: lich su thay doi
+## Command/Query Boundary
 
-Moi tai lieu tam, note chuyen session, hoac plan ngan han nen duoc nhap vao cac file song phu hop thay vi tiep tuc tao file moi o `docs/`.
+If the product has both reads and writes, keep command/query separation clear at
+the code level even when the storage layer is simple:
+
+- Commands mutate state and own audit side effects.
+- Queries read state and format for consumers.
+- Shared domain rules live in domain/application, not controllers.
+
+## Observability Contract
+
+The future server should emit one canonical JSON log line per request with:
+
+- timestamp
+- level
+- request_id
+- user_id when known
+- action
+- duration_ms
+- status_code
+- message
+
+Audit logs are product records. Application logs are operational records. Do not
+use one as a substitute for the other.

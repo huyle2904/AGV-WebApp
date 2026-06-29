@@ -75,7 +75,7 @@ public sealed class AgvApiClient(HttpClient httpClient)
     public async Task DeleteWorkflowAsync(Guid workflowId, CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.DeleteAsync($"api/workflows/{workflowId}", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessWithMessageAsync(response, cancellationToken);
     }
 
     public async Task<WorkflowValidationResult> ValidateWorkflowAsync(Guid workflowId, CancellationToken cancellationToken = default)
@@ -253,7 +253,7 @@ public sealed class AgvApiClient(HttpClient httpClient)
 
     private static async Task<T> ReadRequiredAsync<T>(HttpResponseMessage response, string fallbackMessage, CancellationToken cancellationToken)
     {
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessWithMessageAsync(response, cancellationToken);
         var payload = await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken);
         if (payload is null)
         {
@@ -261,5 +261,21 @@ public sealed class AgvApiClient(HttpClient httpClient)
         }
 
         return payload;
+    }
+
+    private static async Task EnsureSuccessWithMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(payload))
+        {
+            throw new InvalidOperationException(payload.Trim().Trim('"'));
+        }
+
+        response.EnsureSuccessStatusCode();
     }
 }

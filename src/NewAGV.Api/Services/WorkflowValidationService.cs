@@ -4,7 +4,7 @@ namespace NewAGV.Api.Services;
 
 public sealed class WorkflowValidationService(
     WorkflowDefinitionService definitionService,
-    TaskChainCoordinator taskChainCoordinator,
+    TaskChainCatalogService taskChainCatalogService,
     AgvPlantStore plantStore)
 {
     public async Task<WorkflowValidationResult> ValidateWorkflowAsync(Guid workflowId, CancellationToken cancellationToken)
@@ -56,9 +56,7 @@ public sealed class WorkflowValidationService(
             issues.Add(CreateIssue("workflow.robot_not_found", "Error", $"Assigned robot '{workflow.AssignedRobotId}' was not found.", field: nameof(workflow.AssignedRobotId)));
         }
 
-        var taskChainNames = (await taskChainCoordinator.GetTaskChainsAsync(cancellationToken))
-            .Select(item => item.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var taskChainLookup = await taskChainCatalogService.GetTaskChainLookupAsync(cancellationToken);
 
         var orderedSteps = workflow.Steps.OrderBy(step => step.Sequence).ToList();
         for (var index = 0; index < orderedSteps.Count; index++)
@@ -98,12 +96,32 @@ public sealed class WorkflowValidationService(
                     step.Sequence,
                     nameof(step.TaskChainName)));
             }
-            else if (!taskChainNames.Contains(step.TaskChainName))
+            else if (!taskChainLookup.TryGetValue(step.TaskChainName, out var taskChainSummary))
             {
                 issues.Add(CreateIssue(
                     "workflow.step_taskchain_missing",
                     "Error",
-                    $"TaskChain '{step.TaskChainName}' does not exist in the current SEER catalog.",
+                    $"TaskChain '{step.TaskChainName}' does not exist in the durable taskchain catalog.",
+                    step.Id,
+                    step.Sequence,
+                    nameof(step.TaskChainName)));
+            }
+            else if (string.Equals(taskChainSummary.Availability, "MissingFromSource", StringComparison.OrdinalIgnoreCase))
+            {
+                issues.Add(CreateIssue(
+                    "workflow.step_taskchain_missing",
+                    "Error",
+                    $"TaskChain '{step.TaskChainName}' is missing from the AGV source catalog.",
+                    step.Id,
+                    step.Sequence,
+                    nameof(step.TaskChainName)));
+            }
+            else if (string.Equals(taskChainSummary.Availability, "Stale", StringComparison.OrdinalIgnoreCase))
+            {
+                issues.Add(CreateIssue(
+                    "workflow.step_taskchain_stale",
+                    "Error",
+                    $"TaskChain '{step.TaskChainName}' catalog data is stale and must be re-synced before validation can pass.",
                     step.Id,
                     step.Sequence,
                     nameof(step.TaskChainName)));

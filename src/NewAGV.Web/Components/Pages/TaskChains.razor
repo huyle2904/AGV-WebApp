@@ -6,270 +6,449 @@
 
 <PageTitle>TaskChain Center</PageTitle>
 
-<h1>TaskChain Center</h1>
-<p class="page-intro">Load native SEER task chains, inspect their status, and run them through the API safety gate.</p>
-
-@if (!State.IsInitialized)
-{
-    <p class="empty-state">Loading task chain context...</p>
-}
-else
-{
-    <section class="panel-grid taskchain-grid">
-        <article class="panel">
-            <div class="panel-header">
-                <h2>Run TaskChain</h2>
-                <span class="pill">@RoleState.CurrentRole</span>
+<section class="ops-shell-fit">
+    <div class="ops-page">
+        <section class="ops-topbar">
+            <div class="ops-topbar-head">
+                <div class="ops-topbar-title">
+                    <h1>TaskChain Center</h1>
+                    <p>Native SEER TaskChain catalog, runtime controls, and live route progress aligned to the same operations shell as Workflow.</p>
+                </div>
+                <div class="ops-chip-row">
+                    <span class="ops-chip ops-chip-primary"><i data-lucide="user-round-cog" class="lucide-icon" aria-hidden="true"></i><span>@RoleState.CurrentRole</span></span>
+                    <span class="ops-chip @(SelectedRobot is null ? "ops-chip-danger" : GetConnectivityChipClass(SelectedRobot.Connectivity))"><i data-lucide="bot" class="lucide-icon" aria-hidden="true"></i><span>@(_request.RobotId.Length == 0 ? "No robot" : _request.RobotId)</span></span>
+                    <span class="ops-chip @(string.IsNullOrWhiteSpace(_request.TaskChainName) ? "ops-chip-muted" : "ops-chip-ok")"><i data-lucide="git-branch" class="lucide-icon" aria-hidden="true"></i><span>@(string.IsNullOrWhiteSpace(_request.TaskChainName) ? "No selection" : _request.TaskChainName)</span></span>
+                </div>
             </div>
 
-            @if (State.Robots.Count == 0)
-            {
-                <div class="empty-panel">
-                    <strong>No robot available</strong>
-                    <span>TaskChain execution is disabled until a real AGV source is connected.</span>
+            <div class="ops-toolbar-row">
+                <div class="ops-chip-row">
+                    <span class="ops-chip @(CurrentRunStatusClass)"><i data-lucide="@CurrentRunStatusIcon" class="lucide-icon" aria-hidden="true"></i><span>@CurrentRunStatusLabel</span></span>
+                    <span class="ops-chip @(CurrentPreflightReasons.Count == 0 ? "ops-chip-ok" : "ops-chip-danger")"><i data-lucide="shield-check" class="lucide-icon" aria-hidden="true"></i><span>@(CurrentPreflightReasons.Count == 0 ? "Ready to run" : "Blocked")</span></span>
+                    <span class="ops-chip @(_followActiveRun ? "ops-chip-primary" : "ops-chip-muted")"><i data-lucide="radar" class="lucide-icon" aria-hidden="true"></i><span>@(_followActiveRun ? "Following active run" : "Manual selection")</span></span>
                 </div>
-            }
-            else if (State.TaskChains.Count == 0)
-            {
-                <div class="empty-panel">
-                    <strong>No TaskChain found</strong>
-                    <span>The SEER robot did not return any pre-stored TaskChain entries.</span>
+
+                <div class="ops-toolbar-group">
+                    <button type="button" class="ops-toolbar-button ops-toolbar-button-success" @onclick="ExecuteAsync" disabled="@IsExecuteDisabled"><i data-lucide="play" class="lucide-icon" aria-hidden="true"></i><span>Execute</span></button>
+                    <button type="button" class="ops-toolbar-button ops-toolbar-button-warning" @onclick="PauseAsync" disabled="@(!CanPause)"><i data-lucide="pause" class="lucide-icon" aria-hidden="true"></i><span>Pause</span></button>
+                    <button type="button" class="ops-toolbar-button" @onclick="ResumeAsync" disabled="@(!CanResume)"><i data-lucide="rotate-ccw" class="lucide-icon" aria-hidden="true"></i><span>Resume</span></button>
+                    <button type="button" class="ops-toolbar-button ops-toolbar-button-danger" @onclick="CancelAsync" disabled="@(!CanCancel)"><i data-lucide="square" class="lucide-icon" aria-hidden="true"></i><span>Cancel</span></button>
                 </div>
-            }
-            else
-            {
-                <EditForm Model="_request" OnValidSubmit="ExecuteAsync" class="command-form">
-                    <label>
-                        <span>Robot</span>
-                        <select value="@_request.RobotId" @onchange="OnRobotChanged">
-                            @foreach (var robot in State.Robots)
-                            {
-                                <option value="@robot.RobotId">@robot.Name (@robot.Mode)</option>
-                            }
-                        </select>
-                    </label>
-
-                    <label>
-                        <span>TaskChain</span>
-                        <select value="@_request.TaskChainName" @onchange="OnTaskChainChanged">
-                            @foreach (var taskChain in State.TaskChains)
-                            {
-                                <option value="@taskChain.Name">@taskChain.Name</option>
-                            }
-                        </select>
-                    </label>
-
-                    <label class="checkbox-row">
-                        <input type="checkbox" @bind="_request.Confirmed" />
-                        <span>I confirm this TaskChain should be sent to the robot.</span>
-                    </label>
-
-                    @if (PreflightReasons.Count > 0)
-                    {
-                        <div class="preflight-panel">
-                            <strong>TaskChain blocked</strong>
-                            @foreach (var reason in PreflightReasons)
-                            {
-                                <span>@reason</span>
-                            }
-                        </div>
-                    }
-                    else if (WarningReasons.Count > 0)
-                    {
-                        <div class="preflight-panel preflight-warning">
-                            <strong>Check before execution</strong>
-                            @foreach (var reason in WarningReasons)
-                            {
-                                <span>@reason</span>
-                            }
-                        </div>
-                    }
-
-                    <div class="taskchain-actions">
-                        <button class="primary-button" type="submit" disabled="@IsExecuteDisabled">Execute</button>
-                        <button class="primary-button secondary-button" type="button" @onclick="PauseAsync" disabled="@(!CanPause)">Pause</button>
-                        <button class="primary-button secondary-button" type="button" @onclick="ResumeAsync" disabled="@(!CanResume)">Resume</button>
-                        <button class="primary-button danger-button" type="button" @onclick="CancelAsync" disabled="@(!CanCancel)">Cancel</button>
-                    </div>
-                </EditForm>
-            }
-
-            @if (SelectedTaskChainStatus is not null)
-            {
-                <div class="taskchain-detail-card">
-                    <strong>@SelectedTaskChainStatus.TaskListName</strong>
-                    <span>Status: @SelectedTaskChainStatus.TaskListStatus</span>
-                    <span>Task ID: @(SelectedTaskChainStatus.TaskId ?? "-")</span>
-                    <span>Loop: @(SelectedTaskChainStatus.Loop is null ? "-" : SelectedTaskChainStatus.Loop.Value ? "Yes" : "No")</span>
-                    <span>Battery: @(SelectedTaskChainStatus.BatteryPercent?.ToString() ?? "-")%</span>
-                </div>
-            }
-
-            @if (!string.IsNullOrWhiteSpace(_statusMessage))
-            {
-                <p class="inline-status">@_statusMessage</p>
-            }
-        </article>
-
-        <article class="panel">
-            <div class="panel-header">
-                <h2>TaskChain Catalog</h2>
-                <span class="pill">@State.TaskChains.Count items</span>
             </div>
+        </section>
 
-            <div class="table-shell">
-                <table class="app-table">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Last known status</th>
-                            <th>Loaded at</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var taskChain in State.TaskChains)
+        <div class="ops-three-pane">
+            <aside class="ops-sidebar">
+                <div class="ops-sidebar-scroll">
+                    <article class="ops-card">
+                        <div class="ops-card-title">
+                            <div>
+                                <h2>Catalog</h2>
+                                <span>@FilteredTaskChains.Count visible / @State.TaskChains.Count total</span>
+                            </div>
+                        </div>
+
+                        <div class="ops-command-form">
+                            <div class="ops-field">
+                                <label>Robot</label>
+                                <select class="ops-side-select" value="@_request.RobotId" @onchange="OnRobotChanged">
+                                    @foreach (var robot in State.Robots)
+                                    {
+                                        <option value="@robot.RobotId">@robot.Name (@robot.Mode)</option>
+                                    }
+                                </select>
+                            </div>
+
+                            <div class="ops-field">
+                                <label>Search TaskChain</label>
+                                <input class="ops-search-input" placeholder="Search by name..." @bind="_searchText" @bind:event="oninput" />
+                            </div>
+
+                            <div class="ops-filter-row">
+                                @foreach (var filter in StatusFilters)
+                                {
+                                    <button type="button" class="ops-filter-chip @(_statusFilter == filter ? "active" : null)" @onclick="() => _statusFilter = filter">@filter</button>
+                                }
+                            </div>
+
+                            <label class="ops-checkbox">
+                                <input type="checkbox" @bind="_followActiveRun" />
+                                <span>Follow the live run for the selected robot when telemetry updates arrive.</span>
+                            </label>
+                        </div>
+
+                        @if (State.TaskChains.Count == 0)
                         {
-                            <tr class="@(taskChain.Name == _request.TaskChainName ? "taskchain-selected-row" : null)">
-                                <td>
-                                    <button type="button" class="taskchain-row-button" @onclick="() => SelectTaskChainAsync(taskChain.Name)">@taskChain.Name</button>
-                                </td>
-                                <td>@(taskChain.LastKnownStatus?.ToString() ?? "-")</td>
-                                <td>@(taskChain.CreatedOn?.ToLocalTime().ToString("HH:mm:ss") ?? "-")</td>
-                            </tr>
+                            <div class="ops-empty-state">
+                                <strong>No TaskChain found</strong>
+                                <span>The SEER robot has not returned any pre-stored TaskChain entries yet.</span>
+                            </div>
                         }
-                    </tbody>
-                </table>
-            </div>
-        </article>
-
-        <article class="panel">
-            <div class="panel-header">
-                <h2>Active TaskChain Run</h2>
-                <span class="pill">@(_activeRun?.Run.Status.ToString() ?? "Idle")</span>
-            </div>
-
-            @if (_activeRun is null)
-            {
-                <div class="empty-panel">
-                    <strong>No active TaskChain</strong>
-                    <span>Execute a SEER TaskChain to see live runtime data here.</span>
+                        else if (FilteredTaskChains.Count == 0)
+                        {
+                            <div class="ops-empty-state">
+                                <strong>No TaskChain matches the filter</strong>
+                                <span>Try a broader search or switch back to the full status catalog.</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="ops-compact-list">
+                                @foreach (var taskChain in FilteredTaskChains)
+                                {
+                                    <button type="button" class="ops-list-button @(taskChain.Name == _request.TaskChainName ? "active" : null)" @onclick="() => SelectTaskChainAsync(taskChain.Name)">
+                                        <span class="@GetTaskChainSummaryDotClass(taskChain)"></span>
+                                        <div class="ops-list-copy">
+                                            <div class="ops-list-title">@taskChain.Name</div>
+                                            <div class="ops-list-meta">@GetTaskChainMeta(taskChain)</div>
+                                        </div>
+                                        <span class="ops-pill-status @GetTaskChainSummaryPillClass(taskChain)">@GetTaskChainSummaryLabel(taskChain)</span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </article>
                 </div>
-            }
-            else
-            {
-                <div class="taskchain-runtime-grid">
-                    <div class="readiness-item">
-                        <span>TaskChain</span>
-                        <strong>@_activeRun.Run.TaskChainName</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>Run status</span>
-                        <strong>@_activeRun.Run.Status</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>TaskList status</span>
-                        <strong>@(_activeRun.TaskChainStatus?.TaskListStatus.ToString() ?? "-")</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>Task ID</span>
-                        <strong>@(_activeRun.Run.TaskId ?? "-")</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>Closest target</span>
-                        <strong>@(_activeRun.RuntimeStatus?.ClosestTarget ?? "-")</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>Route</span>
-                        <strong>@FormatRoute(_activeRun.RuntimeStatus)</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>Progress</span>
-                        <strong>@FormatProgress(_activeRun.RuntimeStatus)</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>Distance</span>
-                        <strong>@FormatDistance(_activeRun.RuntimeStatus)</strong>
-                    </div>
-                </div>
+            </aside>
 
-                <p class="inline-status taskchain-runtime-message">@(_activeRun.RuntimeStatus?.Info ?? _activeRun.Run.Message)</p>
-            }
-        </article>
+            <section class="ops-main">
+                <div class="ops-main-scroll">
+                    @if (!State.IsInitialized)
+                    {
+                        <div class="ops-empty-state">
+                            <strong>Loading taskchain context</strong>
+                            <span>Waiting for robot telemetry, catalog data, and active run state.</span>
+                        </div>
+                    }
+                    else if (State.Robots.Count == 0)
+                    {
+                        <div class="ops-empty-state">
+                            <strong>No robot available</strong>
+                            <span>TaskChain execution is disabled until at least one live robot is available.</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <article class="ops-panel">
+                            <div class="ops-panel-title">
+                                <div>
+                                    <h2>Selected TaskChain</h2>
+                                    <span>Execution summary and current operator gate for the chosen chain.</span>
+                                </div>
+                                <span class="ops-chip @(CurrentPreflightReasons.Count == 0 ? "ops-chip-ok" : "ops-chip-danger")">@GetDispatchLabel()</span>
+                            </div>
 
-        <article class="panel">
-            <div class="panel-header">
-                <h2>Recent Runs</h2>
-                <span class="pill">@_recentRuns.Count items</span>
-            </div>
-
-            @if (_recentRuns.Count == 0)
-            {
-                <div class="empty-panel">
-                    <strong>No recent run</strong>
-                    <span>Completed, canceled, or failed TaskChain runs will appear here for the selected robot.</span>
-                </div>
-            }
-            else
-            {
-                <div class="table-shell">
-                    <table class="app-table">
-                        <thead>
-                            <tr>
-                                <th>TaskChain</th>
-                                <th>Status</th>
-                                <th>Task ID</th>
-                                <th>Updated</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var snapshot in _recentRuns)
+                            @if (SelectedTaskChainStatus is null)
                             {
-                                <tr>
-                                    <td>@snapshot.Run.TaskChainName</td>
-                                    <td>@snapshot.Run.Status</td>
-                                    <td>@(snapshot.Run.TaskId ?? "-")</td>
-                                    <td>@snapshot.LastUpdated.ToLocalTime().ToString("HH:mm:ss")</td>
-                                </tr>
+                                <div class="ops-empty-state">
+                                    <strong>No TaskChain selected</strong>
+                                    <span>Pick a TaskChain from the catalog to inspect status, route information, and run controls.</span>
+                                </div>
                             }
-                        </tbody>
-                    </table>
+                            else
+                            {
+                                <div class="ops-card ops-taskchain-stack">
+                                    <div class="ops-taskchain-summary-head">
+                                        <div class="ops-robot-name">
+                                            <strong>@SelectedTaskChainName</strong>
+                                            <span>@GetTaskChainMetaLine()</span>
+                                        </div>
+                                        <span class="ops-pill-status @GetTaskChainSummaryPillClass(SelectedTaskChainSummary)">@GetTaskChainSummaryLabel(SelectedTaskChainSummary)</span>
+                                    </div>
+
+                                    <div class="ops-kv-grid">
+                                        <div class="ops-kv"><span>TaskList status</span><strong>@(SelectedTaskChainStatus?.TaskListStatus.ToString() ?? "-")</strong></div>
+                                        <div class="ops-kv"><span>Availability</span><strong>@GetTaskChainAvailabilityLabel(SelectedTaskChainSummary)</strong></div>
+                                        <div class="ops-kv"><span>Last synced</span><strong>@FormatTaskChainSyncTime(SelectedTaskChainSummary?.LastSyncedAt)</strong></div>
+                                        <div class="ops-kv"><span>Missing since</span><strong>@FormatTaskChainSyncTime(SelectedTaskChainSummary?.MissingSince)</strong></div>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (CurrentPreflightReasons.Count > 0)
+                            {
+                                <div class="ops-preflight">
+                                    <strong>Execution blocked</strong>
+                                    @foreach (var reason in CurrentPreflightReasons)
+                                    {
+                                        <span>@reason</span>
+                                    }
+                                </div>
+                            }
+                            else if (CurrentWarningReasons.Count > 0)
+                            {
+                                <div class="ops-preflight-warning">
+                                    <strong>Check before execution</strong>
+                                    @foreach (var reason in CurrentWarningReasons)
+                                    {
+                                        <span>@reason</span>
+                                    }
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(_statusMessage))
+                            {
+                                <div class="ops-runtime-strip">
+                                    <strong>Latest result</strong>
+                                    <span>@_statusMessage</span>
+                                </div>
+                            }
+
+                            <label class="ops-checkbox">
+                                <input type="checkbox" @bind="_request.Confirmed" />
+                                <span>I confirm this TaskChain should be sent to the selected robot when the safety gate is clear.</span>
+                            </label>
+                        </article>
+
+                        <article class="ops-panel">
+                            <div class="ops-panel-title">
+                                <div>
+                                    <h2>Active runtime</h2>
+                                    <span>Live SEER route execution for the selected robot.</span>
+                                </div>
+                                <span class="ops-pill-status @CurrentRunPillClass">@CurrentRunStatusLabel</span>
+                            </div>
+
+                            @if (_activeRun is null)
+                            {
+                                <div class="ops-empty-state">
+                                    <strong>No active TaskChain</strong>
+                                    <span>Execute a TaskChain to populate this runtime surface with live route status.</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="ops-runtime-stack">
+                                    <div class="ops-runtime-head">
+                                        <div class="ops-robot-name">
+                                            <strong>@_activeRun.Run.TaskChainName</strong>
+                                            <span>@_activeRun.Run.RobotId / started @_activeRun.Run.StartedAt.ToLocalTime().ToString("HH:mm:ss")</span>
+                                        </div>
+                                        <span class="ops-pill-status @CurrentRunPillClass">@CurrentRunStatusLabel</span>
+                                    </div>
+
+                                    <div class="ops-runtime-grid">
+                                        <div class="ops-kv"><span>Task ID</span><strong>@(_activeRun.Run.TaskId ?? "-")</strong></div>
+                                        <div class="ops-kv"><span>TaskList status</span><strong>@(_activeRun.TaskChainStatus?.TaskListStatus.ToString() ?? "-")</strong></div>
+                                        <div class="ops-kv"><span>Closest target</span><strong>@(_activeRun.RuntimeStatus?.ClosestTarget ?? "-")</strong></div>
+                                        <div class="ops-kv"><span>Route</span><strong>@FormatRoute(_activeRun.RuntimeStatus)</strong></div>
+                                        <div class="ops-kv"><span>Distance</span><strong>@FormatDistance(_activeRun.RuntimeStatus)</strong></div>
+                                        <div class="ops-kv"><span>Progress</span><strong>@FormatProgress(_activeRun.RuntimeStatus)</strong></div>
+                                    </div>
+
+                                    @if (_activeRun.RuntimeStatus?.Percentage is double percent)
+                                    {
+                                        <div class="ops-progress-track">
+                                            <span class="ops-progress-fill" style="width: @(Math.Clamp(percent * 100, 0, 100))%"></span>
+                                        </div>
+                                    }
+
+                                    <div class="ops-inline-note">@(_activeRun.RuntimeStatus?.Info ?? _activeRun.Run.Message)</div>
+                                </div>
+                            }
+                        </article>
+
+                        <article class="ops-panel">
+                            <div class="ops-panel-title">
+                                <div>
+                                    <h2>Recent runs</h2>
+                                    <span>@_recentRuns.Count items for the selected robot.</span>
+                                </div>
+                            </div>
+
+                            @if (_recentRuns.Count == 0)
+                            {
+                                <div class="ops-empty-state">
+                                    <strong>No recent runs</strong>
+                                    <span>Completed, canceled, or failed TaskChain runs will appear here for the current robot.</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="ops-table-shell">
+                                    <table class="ops-table">
+                                        <thead>
+                                            <tr>
+                                                <th>TaskChain</th>
+                                                <th>Status</th>
+                                                <th>Task ID</th>
+                                                <th>Updated</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var snapshot in _recentRuns)
+                                            {
+                                                <tr>
+                                                    <td>@snapshot.Run.TaskChainName</td>
+                                                    <td><span class="ops-pill-status @GetTaskChainStatusPillClass(snapshot.Run.Status)">@snapshot.Run.Status</span></td>
+                                                    <td>@(snapshot.Run.TaskId ?? "-")</td>
+                                                    <td>@snapshot.LastUpdated.ToLocalTime().ToString("HH:mm:ss")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </article>
+                    }
                 </div>
-            }
-        </article>
-    </section>
-}
+            </section>
+
+            <aside class="ops-inspector">
+                <div class="ops-inspector-scroll">
+                    <article class="ops-card">
+                        <div class="ops-card-title">
+                            <div>
+                                <h2>Safety gate</h2>
+                                <span>Motion preflight for the selected robot before execution.</span>
+                            </div>
+                            <span class="ops-pill-status @(CurrentPreflightReasons.Count == 0 ? "ops-pill-ready" : "ops-pill-danger")">@GetDispatchLabel()</span>
+                        </div>
+
+                        <div class="ops-compact-list">
+                            @foreach (var item in InspectorItems)
+                            {
+                                <div class="ops-compact-row">
+                                    <span>@item.Label</span>
+                                    <strong>@item.Value</strong>
+                                </div>
+                            }
+                        </div>
+                    </article>
+
+                    <article class="ops-card">
+                        <div class="ops-card-title">
+                            <div>
+                                <h2>TaskChain detail</h2>
+                                <span>Selected catalog record and live task status.</span>
+                            </div>
+                        </div>
+
+                        @if (SelectedTaskChainSummary is null && SelectedTaskChainStatus is null)
+                        {
+                            <div class="ops-empty-state">
+                                <strong>No TaskChain detail</strong>
+                                <span>Select a chain from the left catalog to inspect its raw SEER status fields.</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="ops-detail-stack">
+                                <div class="ops-kv"><span>Name</span><strong>@SelectedTaskChainName</strong></div>
+                                <div class="ops-kv"><span>Availability</span><strong>@GetTaskChainAvailabilityLabel(SelectedTaskChainSummary)</strong></div>
+                                <div class="ops-kv"><span>Source state</span><strong>@GetTaskChainSourceStateLabel(SelectedTaskChainSummary)</strong></div>
+                                <div class="ops-kv"><span>Last synced</span><strong>@FormatTaskChainSyncTime(SelectedTaskChainSummary?.LastSyncedAt)</strong></div>
+                                <div class="ops-kv"><span>Missing since</span><strong>@FormatTaskChainSyncTime(SelectedTaskChainSummary?.MissingSince)</strong></div>
+                                <div class="ops-kv"><span>External ID</span><strong>@(SelectedTaskChainSummary?.ExternalId ?? "-")</strong></div>
+                                <div class="ops-kv"><span>TaskList status</span><strong>@(SelectedTaskChainStatus?.TaskListStatus.ToString() ?? "-")</strong></div>
+                                <div class="ops-kv"><span>Task ID</span><strong>@(SelectedTaskChainStatus?.TaskId ?? "-")</strong></div>
+                                <div class="ops-kv"><span>Action group</span><strong>@(SelectedTaskChainStatus?.ActionGroupId?.ToString() ?? "-")</strong></div>
+                                <div class="ops-kv"><span>Action IDs</span><strong>@FormatActionIds(SelectedTaskChainStatus?.ActionIds)</strong></div>
+                                <div class="ops-kv"><span>Battery</span><strong>@(SelectedTaskChainStatus?.BatteryPercent?.ToString() ?? "-")%</strong></div>
+                            </div>
+                        }
+                    </article>
+
+                    <article class="ops-card">
+                        <div class="ops-card-title">
+                            <div>
+                                <h2>Runtime detail</h2>
+                                <span>Focused view of the active run for the selected robot.</span>
+                            </div>
+                        </div>
+
+                        @if (_activeRun is null)
+                        {
+                            <div class="ops-empty-state">
+                                <strong>No active runtime</strong>
+                                <span>When a TaskChain is running, route progress and runtime info will stream here.</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="ops-detail-stack">
+                                <div class="ops-kv"><span>Status</span><strong>@_activeRun.Run.Status</strong></div>
+                                <div class="ops-kv"><span>Closest target</span><strong>@(_activeRun.RuntimeStatus?.ClosestTarget ?? "-")</strong></div>
+                                <div class="ops-kv"><span>Source</span><strong>@(_activeRun.RuntimeStatus?.SourceName ?? "-")</strong></div>
+                                <div class="ops-kv"><span>Target</span><strong>@(_activeRun.RuntimeStatus?.TargetName ?? "-")</strong></div>
+                                <div class="ops-kv"><span>Progress</span><strong>@FormatProgress(_activeRun.RuntimeStatus)</strong></div>
+                                <div class="ops-kv"><span>Info</span><strong>@(_activeRun.RuntimeStatus?.Info ?? _activeRun.Run.Message)</strong></div>
+                            </div>
+                        }
+                    </article>
+                </div>
+            </aside>
+        </div>
+    </div>
+</section>
 
 @code {
-    private TaskChainRunRequest _request = new() { RobotId = "AGV-01", TaskChainName = string.Empty, Confirmed = true };
+    private TaskChainRunRequest _request = new() { RobotId = string.Empty, TaskChainName = string.Empty, Confirmed = true };
     private SeerTaskChainStatus? SelectedTaskChainStatus;
     private TaskChainRunSnapshot? _activeRun;
     private List<TaskChainRunSnapshot> _recentRuns = [];
     private string? _statusMessage;
+    private string _searchText = string.Empty;
+    private string _statusFilter = "All";
+    private bool _followActiveRun = true;
+
+    private static IReadOnlyList<string> StatusFilters { get; } = ["All", "Ready", "Running", "Attention"];
 
     private RobotSummary? SelectedRobot => State.Robots.FirstOrDefault(robot => robot.RobotId == _request.RobotId);
+    private SeerTaskChainSummary? SelectedTaskChainSummary
+        => string.IsNullOrWhiteSpace(_request.TaskChainName)
+            ? null
+            : State.TaskChains.FirstOrDefault(item => string.Equals(item.Name, _request.TaskChainName, StringComparison.OrdinalIgnoreCase));
+    private string SelectedTaskChainName => SelectedTaskChainStatus?.TaskListName ?? SelectedTaskChainSummary?.Name ?? _request.TaskChainName;
 
-    private RobotTelemetryDetail? SelectedRobotDetail =>
-        string.IsNullOrWhiteSpace(_request.RobotId)
+    private RobotTelemetryDetail? SelectedRobotDetail
+        => string.IsNullOrWhiteSpace(_request.RobotId)
             ? null
             : State.RobotDetails.GetValueOrDefault(_request.RobotId);
 
-    private bool IsExecuteDisabled =>
-        State.Robots.Count == 0 ||
-        State.TaskChains.Count == 0 ||
-        string.IsNullOrWhiteSpace(_request.TaskChainName) ||
-        !_request.Confirmed ||
-        PreflightReasons.Count > 0 ||
-        (_activeRun is not null && !IsTerminal(_activeRun.Run.Status));
+    private bool IsExecuteDisabled
+        => State.Robots.Count == 0
+           || State.TaskChains.Count == 0
+           || string.IsNullOrWhiteSpace(_request.TaskChainName)
+           || !_request.Confirmed
+           || CurrentPreflightReasons.Count > 0
+           || (_activeRun is not null && !IsTerminal(_activeRun.Run.Status));
 
-    private bool CanPause => _activeRun?.Run.Status is TaskChainRunStatus.Accepted or TaskChainRunStatus.Waiting or TaskChainRunStatus.Running;
-
+    private bool CanPause => _activeRun?.Run.Status is TaskChainRunStatus.Accepted or TaskChainRunStatus.UnknownTaskId or TaskChainRunStatus.Waiting or TaskChainRunStatus.Running;
     private bool CanResume => _activeRun?.Run.Status is TaskChainRunStatus.Suspended;
-
     private bool CanCancel => _activeRun is not null && !IsTerminal(_activeRun.Run.Status);
 
-    private IReadOnlyList<string> PreflightReasons => BuildPreflightReasons();
+    private IReadOnlyList<string> CurrentPreflightReasons => BuildPreflightReasons();
+    private IReadOnlyList<string> CurrentWarningReasons => BuildWarningReasons();
 
-    private IReadOnlyList<string> WarningReasons => BuildWarningReasons();
+    private IReadOnlyList<SeerTaskChainSummary> FilteredTaskChains
+        => State.TaskChains
+            .Where(taskChain => string.IsNullOrWhiteSpace(_searchText) || taskChain.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase))
+            .Where(MatchesStatusFilter)
+            .ToList();
+
+    private string CurrentRunStatusLabel => _activeRun?.Run.Status.ToString() ?? "Idle";
+    private string CurrentRunStatusClass => GetTaskChainStatusChipClass(_activeRun?.Run.Status);
+    private string CurrentRunStatusIcon => _activeRun?.Run.Status switch
+    {
+        TaskChainRunStatus.Accepted or TaskChainRunStatus.UnknownTaskId or TaskChainRunStatus.Waiting or TaskChainRunStatus.Running => "activity",
+        TaskChainRunStatus.Suspended => "pause",
+        TaskChainRunStatus.Completed => "check-circle-2",
+        TaskChainRunStatus.Failed or TaskChainRunStatus.Canceled or TaskChainRunStatus.OverTime or TaskChainRunStatus.Rejected => "triangle-alert",
+        _ => "circle-off"
+    };
+
+    private string CurrentRunPillClass => GetTaskChainStatusPillClass(_activeRun?.Run.Status);
+
+    private IReadOnlyList<InspectorItem> InspectorItems
+        => [
+            new("Robot", _request.RobotId.Length == 0 ? "None" : _request.RobotId),
+            new("Selection", _request.TaskChainName.Length == 0 ? "None" : _request.TaskChainName),
+            new("Follow live run", _followActiveRun ? "On" : "Off"),
+            new("Blocking reasons", CurrentPreflightReasons.Count.ToString()),
+            new("Warnings", CurrentWarningReasons.Count.ToString()),
+            new("Localization", SelectedRobotDetail?.Localization?.StatusLabel ?? "Unknown")
+        ];
 
     protected override async Task OnInitializedAsync()
     {
@@ -317,12 +496,11 @@ else
     {
         _request = _request with { RobotId = args.Value?.ToString() ?? string.Empty };
         await RefreshRunDataAsync();
-    }
 
-    private async Task OnTaskChainChanged(ChangeEventArgs args)
-    {
-        _request = _request with { TaskChainName = args.Value?.ToString() ?? string.Empty };
-        await LoadSelectedTaskChainAsync();
+        if (_followActiveRun && State.ActiveTaskChainRun?.Run.RobotId == _request.RobotId)
+        {
+            ApplyActiveRunSelection(State.ActiveTaskChainRun);
+        }
     }
 
     private async Task SelectTaskChainAsync(string taskChainName)
@@ -371,39 +549,36 @@ else
         }
 
         var reasons = new List<string>();
-        var robot = SelectedRobot;
-        var detail = SelectedRobotDetail;
-
-        if (robot?.Connectivity != ConnectivityStatus.Online)
+        if (SelectedRobot?.Connectivity != ConnectivityStatus.Online)
         {
             reasons.Add("Robot TCP link is not online.");
         }
 
-        if (detail is null)
+        if (SelectedRobotDetail is null)
         {
             reasons.Add("Live robot telemetry is not available yet.");
             return reasons;
         }
 
-        if (detail.Estop?.Emergency == true || detail.Estop?.DriverEmergency == true || detail.Estop?.SoftEmergency == true)
+        if (SelectedRobotDetail.Estop?.Emergency == true || SelectedRobotDetail.Estop?.DriverEmergency == true || SelectedRobotDetail.Estop?.SoftEmergency == true)
         {
             reasons.Add("E-stop or driver emergency is active.");
         }
 
-        if (detail.ControlOwner?.Locked == true)
+        if (SelectedRobotDetail.ControlOwner?.Locked == true)
         {
-            var owner = detail.ControlOwner.NickName ?? detail.ControlOwner.Ip ?? "another controller";
+            var owner = SelectedRobotDetail.ControlOwner.NickName ?? SelectedRobotDetail.ControlOwner.Ip ?? "another controller";
             reasons.Add($"Robot control is locked by {owner}.");
         }
 
-        if (detail.Alarm is { FatalCount: > 0 } or { ErrorCount: > 0 })
+        if (SelectedRobotDetail.Alarm is { FatalCount: > 0 } or { ErrorCount: > 0 })
         {
             reasons.Add("Robot has active fatal/error alarms.");
         }
 
-        if (detail.Localization?.ReadyForNavigation != true)
+        if (SelectedRobotDetail.Localization?.ReadyForNavigation != true)
         {
-            reasons.Add($"Localization is not ready: {detail.Localization?.StatusLabel ?? "unknown"}.");
+            reasons.Add($"Localization is not ready: {SelectedRobotDetail.Localization?.StatusLabel ?? "unknown"}.");
         }
 
         if (_activeRun is not null && !IsTerminal(_activeRun.Run.Status) && _activeRun.Run.RobotId == _request.RobotId)
@@ -416,13 +591,12 @@ else
 
     private IReadOnlyList<string> BuildWarningReasons()
     {
-        var detail = SelectedRobotDetail;
-        if (detail?.Alarm is null || detail.Alarm.WarningCount == 0)
+        if (SelectedRobotDetail?.Alarm is null || SelectedRobotDetail.Alarm.WarningCount == 0)
         {
             return [];
         }
 
-        return [$"Robot reports {detail.Alarm.WarningCount} active warning(s). Review readiness before running a TaskChain."];
+        return [$"Robot reports {SelectedRobotDetail.Alarm.WarningCount} active warning(s). Review readiness before running this TaskChain."];
     }
 
     private void EnsureDefaults()
@@ -430,6 +604,12 @@ else
         if (State.Robots.Count > 0 && string.IsNullOrWhiteSpace(_request.RobotId))
         {
             _request = _request with { RobotId = State.Robots[0].RobotId };
+        }
+
+        if (_followActiveRun && State.ActiveTaskChainRun?.Run.RobotId == _request.RobotId)
+        {
+            ApplyActiveRunSelection(State.ActiveTaskChainRun);
+            return;
         }
 
         if (State.TaskChains.Count > 0 && string.IsNullOrWhiteSpace(_request.TaskChainName))
@@ -442,6 +622,7 @@ else
         => InvokeAsync(async () =>
         {
             EnsureDefaults();
+
             if (!string.IsNullOrWhiteSpace(_request.TaskChainName) && SelectedTaskChainStatus?.TaskListName != _request.TaskChainName)
             {
                 await LoadSelectedTaskChainAsync();
@@ -451,6 +632,11 @@ else
             {
                 _activeRun = State.ActiveTaskChainRun;
                 UpsertRecentRun(State.ActiveTaskChainRun);
+
+                if (_followActiveRun)
+                {
+                    ApplyActiveRunSelection(State.ActiveTaskChainRun);
+                }
             }
             else if (_activeRun is not null && IsTerminal(_activeRun.Run.Status))
             {
@@ -459,6 +645,20 @@ else
 
             StateHasChanged();
         });
+
+    private void ApplyActiveRunSelection(TaskChainRunSnapshot? snapshot)
+    {
+        if (snapshot is null || snapshot.Run.RobotId != _request.RobotId)
+        {
+            return;
+        }
+
+        if (!string.Equals(_request.TaskChainName, snapshot.Run.TaskChainName, StringComparison.OrdinalIgnoreCase))
+        {
+            _request = _request with { TaskChainName = snapshot.Run.TaskChainName };
+            _ = InvokeAsync(LoadSelectedTaskChainAsync);
+        }
+    }
 
     private void UpsertRecentRun(TaskChainRunSnapshot? snapshot)
     {
@@ -487,6 +687,34 @@ else
         State.Changed -= OnStateChanged;
     }
 
+    private bool MatchesStatusFilter(SeerTaskChainSummary summary) => _statusFilter switch
+    {
+        "Ready" => summary.LastKnownStatus is TaskChainStatus.None or TaskChainStatus.Completed,
+        "Running" => summary.LastKnownStatus is TaskChainStatus.Waiting or TaskChainStatus.Running or TaskChainStatus.Suspended,
+        "Attention" => summary.LastKnownStatus is TaskChainStatus.Failed or TaskChainStatus.Canceled or TaskChainStatus.OverTime,
+        _ => true
+    };
+
+    private string GetDispatchLabel() => CurrentPreflightReasons.Count == 0 ? "Ready" : "Blocked";
+
+    private string GetTaskChainMeta(SeerTaskChainSummary taskChain)
+        => $"{(taskChain.CreatedOn?.ToLocalTime().ToString("HH:mm:ss") ?? "No timestamp")} / {(taskChain.LastKnownStatus?.ToString() ?? "Unknown")}";
+
+    private string GetTaskChainMetaLine()
+    {
+        if (SelectedTaskChainSummary is null)
+        {
+            return $"{(SelectedTaskChainStatus?.TaskId ?? "No task id")} / {(SelectedTaskChainStatus?.ActionIds.Count ?? 0)} action ids";
+        }
+
+        return $"{GetTaskChainAvailabilityLabel(SelectedTaskChainSummary)} / synced {FormatTaskChainSyncTime(SelectedTaskChainSummary.LastSyncedAt)}";
+    }
+
+    private static string FormatActionIds(IReadOnlyList<int>? actionIds)
+        => actionIds is null || actionIds.Count == 0
+            ? "-"
+            : string.Join(", ", actionIds.Take(6)) + (actionIds.Count > 6 ? "..." : string.Empty);
+
     private static bool IsTerminal(TaskChainRunStatus status)
         => status is TaskChainRunStatus.Completed
             or TaskChainRunStatus.Failed
@@ -504,4 +732,90 @@ else
 
     private static string FormatDistance(SeerTaskRuntimeStatus? runtime)
         => runtime?.Distance is null ? "-" : runtime.Distance.Value.ToString("0.###");
+
+    private static string GetTaskChainStatusChipClass(TaskChainRunStatus? status) => status switch
+    {
+        TaskChainRunStatus.Accepted or TaskChainRunStatus.UnknownTaskId or TaskChainRunStatus.Waiting or TaskChainRunStatus.Running => "ops-chip-primary",
+        TaskChainRunStatus.Suspended => "ops-chip-warn",
+        TaskChainRunStatus.Completed => "ops-chip-ok",
+        TaskChainRunStatus.Failed or TaskChainRunStatus.Canceled or TaskChainRunStatus.OverTime or TaskChainRunStatus.Rejected => "ops-chip-danger",
+        _ => "ops-chip-muted"
+    };
+
+    private static string GetTaskChainStatusPillClass(TaskChainRunStatus? status) => status switch
+    {
+        TaskChainRunStatus.Accepted or TaskChainRunStatus.UnknownTaskId or TaskChainRunStatus.Waiting or TaskChainRunStatus.Running => "ops-pill-running",
+        TaskChainRunStatus.Suspended => "ops-pill-paused",
+        TaskChainRunStatus.Completed => "ops-pill-ready",
+        TaskChainRunStatus.Failed or TaskChainRunStatus.Canceled or TaskChainRunStatus.OverTime or TaskChainRunStatus.Rejected => "ops-pill-danger",
+        _ => "ops-pill-idle"
+    };
+
+    private static string GetTaskChainStatusPillClass(TaskChainStatus status) => status switch
+    {
+        TaskChainStatus.Waiting or TaskChainStatus.Running => "ops-pill-running",
+        TaskChainStatus.Suspended => "ops-pill-paused",
+        TaskChainStatus.Completed or TaskChainStatus.None => "ops-pill-ready",
+        TaskChainStatus.Failed or TaskChainStatus.Canceled or TaskChainStatus.OverTime => "ops-pill-danger",
+        _ => "ops-pill-idle"
+    };
+
+    private static string GetTaskChainSummaryDotClass(SeerTaskChainSummary summary) => summary.Availability switch
+    {
+        "MissingFromSource" => "ops-dot ops-dot-danger",
+        "Stale" => "ops-dot ops-dot-warn",
+        _ => summary.LastKnownStatus switch
+        {
+            TaskChainStatus.Waiting or TaskChainStatus.Running => "ops-dot ops-dot-good",
+            TaskChainStatus.Suspended => "ops-dot ops-dot-warn",
+            TaskChainStatus.Failed or TaskChainStatus.Canceled or TaskChainStatus.OverTime => "ops-dot ops-dot-danger",
+            _ => "ops-dot"
+        }
+    };
+
+    private static string GetTaskChainSummaryPillClass(SeerTaskChainSummary? summary) => summary?.Availability switch
+    {
+        "MissingFromSource" => "ops-pill-danger",
+        "Stale" => "ops-pill-paused",
+        _ => summary?.LastKnownStatus switch
+        {
+            TaskChainStatus.Waiting or TaskChainStatus.Running => "ops-pill-running",
+            TaskChainStatus.Suspended => "ops-pill-paused",
+            TaskChainStatus.Failed or TaskChainStatus.Canceled or TaskChainStatus.OverTime => "ops-pill-danger",
+            TaskChainStatus.Completed or TaskChainStatus.None => "ops-pill-ready",
+            _ => "ops-pill-idle"
+        } ?? "ops-pill-idle"
+    };
+
+    private static string GetTaskChainSummaryLabel(SeerTaskChainSummary? summary)
+        => summary?.Availability switch
+    {
+        "MissingFromSource" => "Missing",
+        "Stale" => "Stale",
+        _ => summary?.LastKnownStatus?.ToString() ?? "Unknown"
+    };
+
+    private static string GetTaskChainAvailabilityLabel(SeerTaskChainSummary? summary) => summary?.Availability switch
+    {
+        "MissingFromSource" => "Missing from source",
+        "Stale" => "Stale catalog",
+        "Available" => "Available",
+        _ => "Unknown"
+    };
+
+    private static string GetTaskChainSourceStateLabel(SeerTaskChainSummary? summary) => string.IsNullOrWhiteSpace(summary?.SourceState)
+        ? "Unknown"
+        : summary.SourceState!;
+
+    private static string FormatTaskChainSyncTime(DateTimeOffset? value)
+        => value?.ToLocalTime().ToString("HH:mm:ss") ?? "-";
+
+    private static string GetConnectivityChipClass(ConnectivityStatus status) => status switch
+    {
+        ConnectivityStatus.Online => "ops-chip-ok",
+        ConnectivityStatus.Degraded => "ops-chip-warn",
+        _ => "ops-chip-danger"
+    };
+
+    private sealed record InspectorItem(string Label, string Value);
 }

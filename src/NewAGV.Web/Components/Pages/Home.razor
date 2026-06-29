@@ -4,232 +4,527 @@
 
 <PageTitle>AGV Overview</PageTitle>
 
-<h1>Operations Overview</h1>
-<p class="page-intro">
-    Live SEER AGV state from the API, worker, and robot TCP connection.
-</p>
-
-@if (!State.IsInitialized)
-{
-    <p class="empty-state">Connecting to the AGV backend...</p>
-}
-else
-{
-    @if (State.Robots.Count == 0)
-    {
-        <section class="status-banner status-offline">
-            <div>
-                <strong>No AGV connection configured</strong>
-                <span>@State.Health.Message</span>
+<section class="ops-shell-fit">
+    <div class="ops-page">
+        <section class="ops-topbar">
+            <div class="ops-topbar-head">
+                <div class="ops-topbar-title">
+                    <h1>Operations Overview</h1>
+                    <p>Live fleet readiness, automation runtime, command audit, and navigation shortcuts in one operations view.</p>
+                </div>
+                <div class="ops-chip-row">
+                    <span class="ops-chip ops-chip-primary"><i data-lucide="activity" class="lucide-icon" aria-hidden="true"></i><span>Updated @State.Health.UpdatedAt.ToLocalTime().ToString("HH:mm:ss")</span></span>
+                    <span class="ops-chip @GetIntegrationChipClass()"><i data-lucide="@GetIntegrationIcon()" class="lucide-icon" aria-hidden="true"></i><span>@State.Health.IntegrationStatus</span></span>
+                </div>
             </div>
-            <span class="status-code">@State.Health.IntegrationStatus</span>
+
+            <div class="ops-topbar-body">
+                <div class="ops-chip-row">
+                    <span class="ops-chip ops-chip-muted"><i data-lucide="bot" class="lucide-icon" aria-hidden="true"></i><span>@OnlineRobotCount online / @State.Robots.Count total</span></span>
+                    <span class="ops-chip @(CriticalAlarmCount > 0 ? "ops-chip-danger" : WarningAlarmCount > 0 ? "ops-chip-warn" : "ops-chip-ok")"><i data-lucide="shield-alert" class="lucide-icon" aria-hidden="true"></i><span>@CriticalAlarmCount critical, @WarningAlarmCount warning</span></span>
+                    <span class="ops-chip @(State.ActiveTaskChainRun is null ? "ops-chip-muted" : "ops-chip-primary")"><i data-lucide="git-branch" class="lucide-icon" aria-hidden="true"></i><span>TaskChain: @(State.ActiveTaskChainRun?.Run.TaskChainName ?? "Idle")</span></span>
+                    <span class="ops-chip @(State.ActiveWorkflowRun is null ? "ops-chip-muted" : "ops-chip-primary")"><i data-lucide="workflow" class="lucide-icon" aria-hidden="true"></i><span>Workflow: @(State.ActiveWorkflowRun?.WorkflowName ?? "Idle")</span></span>
+                </div>
+
+                <div class="ops-toolbar-group">
+                    <a class="ops-chip" href="map"><i data-lucide="map" class="lucide-icon" aria-hidden="true"></i><span>Map</span></a>
+                    <a class="ops-chip" href="commands"><i data-lucide="send" class="lucide-icon" aria-hidden="true"></i><span>Commands</span></a>
+                    <a class="ops-chip" href="taskchains"><i data-lucide="git-branch" class="lucide-icon" aria-hidden="true"></i><span>TaskChains</span></a>
+                    <a class="ops-chip" href="workflow"><i data-lucide="workflow" class="lucide-icon" aria-hidden="true"></i><span>Workflow</span></a>
+                </div>
+            </div>
         </section>
-    }
 
-    <section class="stats-grid">
-        <article class="stat-card">
-            <span class="stat-label">Robots online</span>
-            <strong class="stat-value">@State.Robots.Count(robot => robot.Connectivity == ConnectivityStatus.Online)</strong>
-            <span class="stat-foot">@State.Robots.Count total robots</span>
-        </article>
-        <article class="stat-card">
-            <span class="stat-label">Running missions</span>
-            <strong class="stat-value">@State.Robots.Count(robot => robot.Mode == RobotMode.Navigating)</strong>
-            <span class="stat-foot">Command center ready</span>
-        </article>
-        <article class="stat-card">
-            <span class="stat-label">Critical alarms</span>
-            <strong class="stat-value">@State.Robots.Count(robot => robot.AlarmState == AlarmSeverity.Critical)</strong>
-            <span class="stat-foot">Warnings: @State.Robots.Count(robot => robot.AlarmState == AlarmSeverity.Warning)</span>
-        </article>
-        <article class="stat-card">
-            <span class="stat-label">Integration status</span>
-            <strong class="stat-value">@State.Health.IntegrationStatus</strong>
-            <span class="stat-foot">@State.Health.Message</span>
-        </article>
-    </section>
-
-    <section class="panel-grid">
-        @if (PrimaryDetail is not null)
-        {
-            <article class="panel">
-                <div class="panel-header">
-                    <h2>Robot readiness</h2>
-                    <span class="pill">@PrimaryDetail.RobotId</span>
+        <div class="ops-body">
+            @if (!State.IsInitialized)
+            {
+                <div class="ops-empty-state">
+                    <strong>Connecting to the AGV backend</strong>
+                    <span>Waiting for API, Worker, and telemetry streams to report the first live plant state.</span>
                 </div>
-
-                <div class="readiness-grid">
-                    <div class="readiness-item">
-                        <span>Map</span>
-                        <strong>@(PrimaryDetail.CurrentMap ?? "-")</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>E-stop</span>
-                        <strong>@FormatEstop(PrimaryDetail)</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>Localization</span>
-                        <strong>@PrimaryDetail.Localization?.StatusLabel</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>Confidence</span>
-                        <strong>@FormatPercent(PrimaryDetail.Localization?.Confidence)</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>Control owner</span>
-                        <strong>@FormatControlOwner(PrimaryDetail)</strong>
-                    </div>
-                    <div class="readiness-item">
-                        <span>Battery</span>
-                        <strong>@FormatPercent(PrimaryDetail.Battery?.BatteryLevel)</strong>
-                    </div>
-                </div>
-
-                @if (AlarmItems.Count == 0)
-                {
-                    <p class="inline-status">No active alarm details reported.</p>
-                }
-                else
-                {
-                    <div class="alarm-list">
-                        @foreach (var alarm in AlarmItems.Take(6))
-                        {
-                            <div class="alarm-row alarm-@alarm.SeverityClass">
-                                <span class="alarm-severity">@alarm.Severity</span>
-                                <strong>@alarm.Code</strong>
-                                <span>@(alarm.Description ?? alarm.Describe ?? "No description")</span>
-                                @if (!string.IsNullOrWhiteSpace(alarm.Method))
-                                {
-                                    <span>@alarm.Method</span>
-                                }
+            }
+            else
+            {
+                <div class="ops-dashboard">
+                    <section class="ops-stat-grid">
+                        <article class="ops-stat-card">
+                            <div class="ops-stat-icon"><i data-lucide="bot" class="lucide-icon" aria-hidden="true"></i></div>
+                            <div class="ops-stat-copy">
+                                <span class="ops-stat-label">Robots online</span>
+                                <strong class="ops-stat-value">@OnlineRobotCount</strong>
+                                <span class="ops-stat-foot">@State.Robots.Count robots discovered</span>
                             </div>
-                        }
-                    </div>
-                }
-            </article>
-        }
+                        </article>
+                        <article class="ops-stat-card">
+                            <div class="ops-stat-icon"><i data-lucide="move-right" class="lucide-icon" aria-hidden="true"></i></div>
+                            <div class="ops-stat-copy">
+                                <span class="ops-stat-label">Moving robots</span>
+                                <strong class="ops-stat-value">@NavigatingRobotCount</strong>
+                                <span class="ops-stat-foot">Teleop: @TeleopRobotCount</span>
+                            </div>
+                        </article>
+                        <article class="ops-stat-card">
+                            <div class="ops-stat-icon"><i data-lucide="triangle-alert" class="lucide-icon" aria-hidden="true"></i></div>
+                            <div class="ops-stat-copy">
+                                <span class="ops-stat-label">Alarm pressure</span>
+                                <strong class="ops-stat-value">@CriticalAlarmCount</strong>
+                                <span class="ops-stat-foot">@WarningAlarmCount warning alarms</span>
+                            </div>
+                        </article>
+                        <article class="ops-stat-card">
+                            <div class="ops-stat-icon"><i data-lucide="timer" class="lucide-icon" aria-hidden="true"></i></div>
+                            <div class="ops-stat-copy">
+                                <span class="ops-stat-label">Active automation</span>
+                                <strong class="ops-stat-value">@ActiveAutomationCount</strong>
+                                <span class="ops-stat-foot">TaskChain + Workflow live runs</span>
+                            </div>
+                        </article>
+                    </section>
 
-        <article class="panel">
-            <div class="panel-header">
-                <h2>Fleet</h2>
-                <span class="pill">@State.Robots.Count robots</span>
-            </div>
+                    <section class="ops-home-grid">
+                        <div class="ops-home-stack">
+                            <article class="ops-card ops-hero-card">
+                                <div class="ops-card-title">
+                                    <div>
+                                        <h2>Focused robot</h2>
+                                        <p class="ops-card-subtitle">Primary live readiness and route context for dispatch decisions.</p>
+                                    </div>
+                                    <span class="ops-chip @(FocusedRobot is null ? "ops-chip-muted" : GetRobotModeChipClass(FocusedRobot.Mode))">@GetRobotModeLabel()</span>
+                                </div>
 
-            @if (State.Robots.Count == 0)
-            {
-                <div class="empty-panel">
-                    <strong>No robots discovered</strong>
-                    <span>Connect the SEER adapter before this table shows live AGV data.</span>
-                </div>
-            }
-            else
-            {
-                <div class="table-shell">
-                    <table class="app-table">
-                        <thead>
-                            <tr>
-                                <th>Robot</th>
-                                <th>Mode</th>
-                                <th>Battery</th>
-                                <th>Task</th>
-                                <th>Link</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var robot in State.Robots)
-                            {
-                                <tr>
-                                    <td>@robot.Name</td>
-                                    <td>@robot.Mode</td>
-                                    <td>@robot.BatteryPercent%</td>
-                                    <td>@(robot.CurrentTask ?? "Idle")</td>
-                                    <td>@robot.Connectivity</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </article>
+                                @if (FocusedRobot is null)
+                                {
+                                    <div class="ops-empty-state">
+                                        <strong>No robot discovered</strong>
+                                        <span>Connect the SEER adapter before this dashboard can show live operational focus.</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="ops-hero-top">
+                                        <div class="ops-hero-name">
+                                            <strong>@FocusedRobot.Name</strong>
+                                            <span>@FocusedRobot.RobotId / @FocusedRobot.Connectivity / @(FocusedDetail?.CurrentMap ?? "No active map")</span>
+                                        </div>
+                                        <span class="ops-chip @GetConnectivityChipClass(FocusedRobot.Connectivity)">@FocusedRobot.Connectivity</span>
+                                    </div>
 
-        <article class="panel">
-            <div class="panel-header">
-                <h2>Recent command log</h2>
-                <span class="pill">@State.AuditEntries.Count entries</span>
-            </div>
+                                    <div class="ops-battery-row">
+                                        <span class="ops-caption">Battery</span>
+                                        <strong class="ops-battery-value">@FocusedRobot.BatteryPercent%</strong>
+                                    </div>
+                                    <div class="ops-battery-track">
+                                        <span class="@GetBatteryClass(FocusedRobot.BatteryPercent)" style="width: @FocusedRobot.BatteryPercent%"></span>
+                                    </div>
 
-            @if (State.AuditEntries.Count == 0)
-            {
-                <p class="empty-state">No commands have been dispatched yet.</p>
-            }
-            else
-            {
-                <div class="audit-feed">
-                    @foreach (var entry in State.AuditEntries.Take(6))
-                    {
-                        <div class="audit-item">
-                            <div class="audit-title">@entry.DisplayOperation for @entry.RobotId</div>
-                            <div class="audit-meta">@entry.RequestedByRole / @entry.Status / @entry.OccurredAt.ToLocalTime().ToString("HH:mm:ss")</div>
-                            <div class="audit-message">@entry.Message</div>
+                                    <div class="ops-kv-grid">
+                                        <div class="ops-kv"><span>Localization</span><strong>@(FocusedDetail?.Localization?.StatusLabel ?? "Unknown")</strong></div>
+                                        <div class="ops-kv"><span>E-stop</span><strong>@FormatEstop(FocusedDetail)</strong></div>
+                                        <div class="ops-kv"><span>Control owner</span><strong>@FormatControlOwner(FocusedDetail)</strong></div>
+                                        <div class="ops-kv"><span>Current task</span><strong>@(FocusedRobot.CurrentTask ?? "Idle")</strong></div>
+                                        <div class="ops-kv"><span>Target</span><strong>@(FocusedRobot.TargetEntityId ?? "-")</strong></div>
+                                        <div class="ops-kv"><span>Pose</span><strong>@FormatPose(FocusedRobot.Pose)</strong></div>
+                                    </div>
+                                }
+                            </article>
+
+                            <article class="ops-card">
+                                <div class="ops-card-title">
+                                    <div>
+                                        <h2>Dispatch readiness</h2>
+                                        <p class="ops-card-subtitle">What the operator should verify before commanding the focused robot.</p>
+                                    </div>
+                                    <span class="ops-chip @(FocusedReadyForMotion ? "ops-chip-ok" : "ops-chip-warn")">@(FocusedReadyForMotion ? "Ready" : "Attention")</span>
+                                </div>
+                                <div class="ops-status-list">
+                                    @foreach (var item in FocusedReadinessItems)
+                                    {
+                                        <div class="ops-status-row">
+                                            <span class="@GetReadinessDotClass(item.IsHealthy)"></span>
+                                            <div class="ops-status-copy">
+                                                <strong>@item.Label</strong>
+                                                <span class="ops-status-note">@item.Value</span>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </article>
+
+                            <article class="ops-card">
+                                <div class="ops-card-title">
+                                    <div>
+                                        <h2>Recent activity</h2>
+                                        <p class="ops-card-subtitle">Command acknowledgements and operator actions for the focused robot.</p>
+                                    </div>
+                                    <div class="ops-tabs ops-home-activity-toggle">
+                                        <button type="button" class="ops-tab-button @(_activityMode == "Focused" ? "active" : null)" @onclick='@(() => _activityMode = "Focused")'>Focused robot</button>
+                                        <button type="button" class="ops-tab-button @(_activityMode == "All" ? "active" : null)" @onclick='@(() => _activityMode = "All")'>All robots</button>
+                                    </div>
+                                </div>
+
+                                @if (FilteredAuditEntries.Count == 0)
+                                {
+                                    <div class="ops-empty-state">
+                                        <strong>No command activity yet</strong>
+                                        <span>The audit feed will appear here once operators or automations dispatch robot actions.</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="ops-event-list">
+                                        @foreach (var entry in FilteredAuditEntries)
+                                        {
+                                            <div class="ops-event-item">
+                                                <span class="@GetAuditDotClass(entry.Status)"></span>
+                                                <div class="ops-event-copy">
+                                                    <div class="ops-event-title">@entry.DisplayOperation for @entry.RobotId</div>
+                                                    <div class="ops-event-meta">@entry.RequestedByRole / @entry.Status / @entry.OccurredAt.ToLocalTime().ToString("HH:mm:ss")</div>
+                                                    <div class="ops-inline-note">@entry.Message</div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </article>
                         </div>
-                    }
+
+                        <div class="ops-home-stack">
+                            <article class="ops-card">
+                                <div class="ops-card-title">
+                                    <div>
+                                        <h2>Active automation</h2>
+                                        <p class="ops-card-subtitle">Live runtime surfaces for currently executing TaskChain and Workflow.</p>
+                                    </div>
+                                </div>
+
+                                <div class="ops-runtime-pair">
+                                    <div class="ops-runtime-surface">
+                                        <div class="ops-card-title">
+                                            <div>
+                                                <h2>TaskChain runtime</h2>
+                                                <span>@(State.ActiveTaskChainRun?.Run.RobotId ?? "No robot")</span>
+                                            </div>
+                                            <span class="ops-pill-status @GetTaskChainStatusPillClass(State.ActiveTaskChainRun?.Run.Status)">@GetTaskChainStatusLabel(State.ActiveTaskChainRun?.Run.Status)</span>
+                                        </div>
+                                        @if (State.ActiveTaskChainRun is null)
+                                        {
+                                            <div class="ops-empty-state">
+                                                <strong>No active TaskChain</strong>
+                                                <span>Run one from the TaskChains screen to inspect live route progress here.</span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="ops-runtime-grid">
+                                                <div class="ops-kv"><span>Name</span><strong>@State.ActiveTaskChainRun.Run.TaskChainName</strong></div>
+                                                <div class="ops-kv"><span>Task ID</span><strong>@(State.ActiveTaskChainRun.Run.TaskId ?? "-")</strong></div>
+                                                <div class="ops-kv"><span>Route</span><strong>@FormatTaskChainRoute(State.ActiveTaskChainRun.RuntimeStatus)</strong></div>
+                                                <div class="ops-kv"><span>Progress</span><strong>@FormatTaskChainProgress(State.ActiveTaskChainRun.RuntimeStatus)</strong></div>
+                                            </div>
+                                        }
+                                    </div>
+
+                                    <div class="ops-runtime-surface">
+                                        <div class="ops-card-title">
+                                            <div>
+                                                <h2>Workflow runtime</h2>
+                                                <span>@(State.ActiveWorkflowRun?.RobotId ?? "No robot")</span>
+                                            </div>
+                                            <span class="ops-pill-status @GetWorkflowStatusPillClass(State.ActiveWorkflowRun?.Status)">@GetWorkflowStatusLabel(State.ActiveWorkflowRun?.Status)</span>
+                                        </div>
+                                        @if (State.ActiveWorkflowRun is null)
+                                        {
+                                            <div class="ops-empty-state">
+                                                <strong>No active Workflow</strong>
+                                                <span>Use the Workflow builder to launch a run and expose live execution state here.</span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="ops-runtime-grid">
+                                                <div class="ops-kv"><span>Name</span><strong>@State.ActiveWorkflowRun.WorkflowName</strong></div>
+                                                <div class="ops-kv"><span>Version</span><strong>v@State.ActiveWorkflowRun.WorkflowVersion</strong></div>
+                                                <div class="ops-kv"><span>Current step</span><strong>@(State.ActiveWorkflowRun.CurrentStepSequence?.ToString("00") ?? "-")</strong></div>
+                                                <div class="ops-kv"><span>Started</span><strong>@State.ActiveWorkflowRun.StartedAt.ToLocalTime().ToString("HH:mm:ss")</strong></div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </article>
+
+                            <article class="ops-card">
+                                <div class="ops-card-title">
+                                    <div>
+                                        <h2>Fleet snapshot</h2>
+                                        <p class="ops-card-subtitle">Select a robot to change the dashboard focus and activity filter.</p>
+                                    </div>
+                                    <span class="ops-chip ops-chip-muted">@State.Robots.Count robots</span>
+                                </div>
+
+                                @if (State.Robots.Count == 0)
+                                {
+                                    <div class="ops-empty-state">
+                                        <strong>No robots discovered</strong>
+                                        <span>Connect the live plant first to populate this fleet snapshot.</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="ops-compact-list">
+                                        @foreach (var robot in State.Robots)
+                                        {
+                                            <button type="button" class="ops-list-button @((robot.RobotId == _focusedRobotId) ? "active" : null)" @onclick="() => FocusRobot(robot.RobotId)">
+                                                <span class="@GetConnectivityDotClass(robot.Connectivity)"></span>
+                                                <div class="ops-list-copy">
+                                                    <div class="ops-list-title">@robot.Name</div>
+                                                    <div class="ops-list-meta">@robot.RobotId / @robot.Mode / Battery @robot.BatteryPercent%</div>
+                                                </div>
+                                                <span class="ops-pill-status @GetConnectivityPillClass(robot.Connectivity)">@robot.Connectivity</span>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </article>
+
+                            <article class="ops-card">
+                                <div class="ops-card-title">
+                                    <div>
+                                        <h2>Quick navigation</h2>
+                                        <p class="ops-card-subtitle">Jump directly into the page that owns the next operational decision.</p>
+                                    </div>
+                                </div>
+                                <div class="ops-link-grid">
+                                    <a class="ops-link-card" href="map"><div><strong>Map monitor</strong><div class="ops-event-meta">Live plant map, station layer, and alarms.</div></div><i data-lucide="map" class="lucide-icon" aria-hidden="true"></i></a>
+                                    <a class="ops-link-card" href="commands"><div><strong>Command center</strong><div class="ops-event-meta">Mission, teleop, and relocate flows.</div></div><i data-lucide="send" class="lucide-icon" aria-hidden="true"></i></a>
+                                    <a class="ops-link-card" href="taskchains"><div><strong>TaskChains</strong><div class="ops-event-meta">Native SEER taskchain runtime and catalog.</div></div><i data-lucide="git-branch" class="lucide-icon" aria-hidden="true"></i></a>
+                                    <a class="ops-link-card" href="workflow"><div><strong>Workflow builder</strong><div class="ops-event-meta">Orchestrated automation and runtime history.</div></div><i data-lucide="workflow" class="lucide-icon" aria-hidden="true"></i></a>
+                                </div>
+                            </article>
+                        </div>
+                    </section>
                 </div>
             }
-        </article>
-    </section>
-}
+        </div>
+    </div>
+</section>
 
 @code {
-    private RobotTelemetryDetail? PrimaryDetail =>
-        State.Robots.Count == 0
-            ? null
-            : State.RobotDetails.GetValueOrDefault(State.Robots[0].RobotId);
+    private string? _focusedRobotId;
+    private string _activityMode = "Focused";
 
-    private IReadOnlyList<AlarmDisplayItem> AlarmItems =>
-        PrimaryDetail?.Alarm is null
+    private RobotSummary? FocusedRobot
+        => State.Robots.FirstOrDefault(robot => robot.RobotId == _focusedRobotId)
+        ?? State.Robots.FirstOrDefault(robot => robot.Connectivity == ConnectivityStatus.Online)
+        ?? State.Robots.FirstOrDefault();
+
+    private RobotTelemetryDetail? FocusedDetail
+        => FocusedRobot is null ? null : State.RobotDetails.GetValueOrDefault(FocusedRobot.RobotId);
+
+    private int OnlineRobotCount => State.Robots.Count(robot => robot.Connectivity == ConnectivityStatus.Online);
+    private int NavigatingRobotCount => State.Robots.Count(robot => robot.Mode == RobotMode.Navigating);
+    private int TeleopRobotCount => State.Robots.Count(robot => robot.Mode == RobotMode.Teleop);
+    private int ActiveAutomationCount => (State.ActiveTaskChainRun is null ? 0 : 1) + (State.ActiveWorkflowRun is null ? 0 : 1);
+
+    private int CriticalAlarmCount
+        => State.RobotDetails.Values.Count(detail => detail.Alarm is { FatalCount: > 0 } or { ErrorCount: > 0 });
+
+    private int WarningAlarmCount
+        => State.RobotDetails.Values.Sum(detail => detail.Alarm?.WarningCount ?? 0);
+
+    private bool FocusedReadyForMotion
+        => FocusedRobot?.Connectivity == ConnectivityStatus.Online
+           && FocusedDetail?.Localization?.ReadyForNavigation == true
+           && !IsEmergencyActive(FocusedDetail)
+           && FocusedDetail?.ControlOwner?.Locked != true
+           && FocusedDetail?.Alarm is not { FatalCount: > 0 }
+           && FocusedDetail?.Alarm is not { ErrorCount: > 0 };
+
+    private IReadOnlyList<ReadinessItem> FocusedReadinessItems
+        => FocusedRobot is null
             ? []
-            : PrimaryDetail.Alarm.Fatals.Select(item => AlarmDisplayItem.From("Fatal", "fatal", item))
-                .Concat(PrimaryDetail.Alarm.Errors.Select(item => AlarmDisplayItem.From("Error", "error", item)))
-                .Concat(PrimaryDetail.Alarm.Warnings.Select(item => AlarmDisplayItem.From("Warning", "warning", item)))
-                .Concat(PrimaryDetail.Alarm.Notices.Select(item => AlarmDisplayItem.From("Notice", "notice", item)))
-                .ToList();
+            : [
+                new("Connectivity", FocusedRobot.Connectivity.ToString(), FocusedRobot.Connectivity == ConnectivityStatus.Online),
+                new("Localization", FocusedDetail?.Localization?.StatusLabel ?? "Unknown", FocusedDetail?.Localization?.ReadyForNavigation == true),
+                new("E-stop", FormatEstop(FocusedDetail), !IsEmergencyActive(FocusedDetail)),
+                new("Control owner", FormatControlOwner(FocusedDetail), FocusedDetail?.ControlOwner?.Locked != true),
+                new("Alarm state", GetAlarmSummary(FocusedDetail), FocusedDetail?.Alarm is not { FatalCount: > 0 } and not { ErrorCount: > 0 }),
+                new("Automation load", GetAutomationSummary(), true)
+            ];
+
+    private IReadOnlyList<MissionAuditEntry> FilteredAuditEntries
+        => (_activityMode == "All"
+                ? State.AuditEntries
+                : State.AuditEntries.Where(entry => entry.RobotId == (FocusedRobot?.RobotId ?? string.Empty)))
+            .Take(8)
+            .ToList();
 
     protected override async Task OnInitializedAsync()
     {
         State.Changed += OnStateChanged;
         await State.EnsureInitializedAsync();
+        EnsureFocusedRobot();
     }
 
-    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+    private void OnStateChanged()
+        => InvokeAsync(() =>
+        {
+            EnsureFocusedRobot();
+            StateHasChanged();
+        });
+
+    private void FocusRobot(string robotId)
+    {
+        _focusedRobotId = robotId;
+    }
+
+    private void EnsureFocusedRobot()
+    {
+        if (FocusedRobot is not null)
+        {
+            _focusedRobotId = FocusedRobot.RobotId;
+        }
+    }
 
     public void Dispose()
     {
         State.Changed -= OnStateChanged;
     }
 
-    private static string FormatPercent(double? value)
-        => value is null ? "-" : $"{value.Value * 100:0.#}%";
+    private string GetIntegrationChipClass() => State.Health.IntegrationStatus switch
+    {
+        ConnectivityStatus.Online => "ops-chip-ok",
+        ConnectivityStatus.Degraded => "ops-chip-warn",
+        _ => "ops-chip-danger"
+    };
 
-    private static string FormatEstop(RobotTelemetryDetail detail)
-        => detail.Estop?.Emergency == true || detail.Estop?.DriverEmergency == true || detail.Estop?.SoftEmergency == true
-            ? "Active"
-            : "Clear";
+    private string GetIntegrationIcon() => State.Health.IntegrationStatus switch
+    {
+        ConnectivityStatus.Online => "shield-check",
+        ConnectivityStatus.Degraded => "shield-alert",
+        _ => "shield-x"
+    };
 
-    private static string FormatControlOwner(RobotTelemetryDetail detail)
-        => detail.ControlOwner?.Locked == true
+    private static string GetRobotModeChipClass(RobotMode mode) => mode switch
+    {
+        RobotMode.Navigating => "ops-chip-primary",
+        RobotMode.Teleop => "ops-chip-warn",
+        RobotMode.Fault => "ops-chip-danger",
+        RobotMode.Paused => "ops-chip-warn",
+        _ => "ops-chip-ok"
+    };
+
+    private string GetRobotModeLabel() => FocusedRobot?.Mode.ToString() ?? "No robot";
+
+    private static string GetConnectivityChipClass(ConnectivityStatus status) => status switch
+    {
+        ConnectivityStatus.Online => "ops-chip-ok",
+        ConnectivityStatus.Degraded => "ops-chip-warn",
+        _ => "ops-chip-danger"
+    };
+
+    private static string GetBatteryClass(int batteryPercent)
+    {
+        if (batteryPercent < 20)
+        {
+            return "ops-battery-fill low";
+        }
+
+        if (batteryPercent < 40)
+        {
+            return "ops-battery-fill warn";
+        }
+
+        return "ops-battery-fill";
+    }
+
+    private static string FormatEstop(RobotTelemetryDetail? detail)
+        => IsEmergencyActive(detail) ? "Active" : "Clear";
+
+    private static bool IsEmergencyActive(RobotTelemetryDetail? detail)
+        => detail?.Estop?.Emergency == true
+           || detail?.Estop?.DriverEmergency == true
+           || detail?.Estop?.SoftEmergency == true;
+
+    private static string FormatControlOwner(RobotTelemetryDetail? detail)
+        => detail?.ControlOwner?.Locked == true
             ? detail.ControlOwner.NickName ?? detail.ControlOwner.Ip ?? "Locked"
             : "Unlocked";
 
-    private sealed record AlarmDisplayItem(
-        string Severity,
-        string SeverityClass,
-        string Code,
-        string? Description,
-        string? Describe,
-        string? Method)
-    {
-        public static AlarmDisplayItem From(string severity, string severityClass, SeerAlarmItem item)
-            => new(severity, severityClass, item.Code, item.Description, item.Describe, item.Method);
-    }
-}
+    private static string FormatPose(Pose2D pose)
+        => $"{pose.X:0.##}, {pose.Y:0.##}, {pose.HeadingDegrees:0.#} deg";
 
+    private static string GetAlarmSummary(RobotTelemetryDetail? detail)
+    {
+        if (detail?.Alarm is null)
+        {
+            return "No detail";
+        }
+
+        return detail.Alarm.FatalCount > 0 || detail.Alarm.ErrorCount > 0
+            ? $"{detail.Alarm.FatalCount + detail.Alarm.ErrorCount} critical/error"
+            : detail.Alarm.WarningCount > 0
+                ? $"{detail.Alarm.WarningCount} warning"
+                : "Clear";
+    }
+
+    private string GetAutomationSummary()
+    {
+        var taskChain = State.ActiveTaskChainRun?.Run.RobotId == FocusedRobot?.RobotId ? "TaskChain live" : null;
+        var workflow = State.ActiveWorkflowRun?.RobotId == FocusedRobot?.RobotId ? "Workflow live" : null;
+        return string.Join(" + ", new[] { taskChain, workflow }.Where(value => !string.IsNullOrWhiteSpace(value)).DefaultIfEmpty("Idle"));
+    }
+
+    private static string GetReadinessDotClass(bool isHealthy) => isHealthy ? "ops-dot ops-dot-good" : "ops-dot ops-dot-warn";
+
+    private static string GetAuditDotClass(MissionCommandStatus status) => status switch
+    {
+        MissionCommandStatus.Completed => "ops-dot ops-dot-good",
+        MissionCommandStatus.Accepted or MissionCommandStatus.Queued => "ops-dot ops-dot-warn",
+        _ => "ops-dot ops-dot-danger"
+    };
+
+    private static string GetConnectivityDotClass(ConnectivityStatus status) => status switch
+    {
+        ConnectivityStatus.Online => "ops-dot ops-dot-good",
+        ConnectivityStatus.Degraded => "ops-dot ops-dot-warn",
+        _ => "ops-dot ops-dot-danger"
+    };
+
+    private static string GetConnectivityPillClass(ConnectivityStatus status) => status switch
+    {
+        ConnectivityStatus.Online => "ops-pill-ready",
+        ConnectivityStatus.Degraded => "ops-pill-warning",
+        _ => "ops-pill-danger"
+    };
+
+    private static string GetTaskChainStatusLabel(TaskChainRunStatus? status) => status?.ToString() ?? "Idle";
+
+    private static string GetTaskChainStatusPillClass(TaskChainRunStatus? status) => status switch
+    {
+        TaskChainRunStatus.Accepted or TaskChainRunStatus.UnknownTaskId or TaskChainRunStatus.Waiting or TaskChainRunStatus.Running => "ops-pill-running",
+        TaskChainRunStatus.Suspended => "ops-pill-paused",
+        TaskChainRunStatus.Completed => "ops-pill-ready",
+        TaskChainRunStatus.Failed or TaskChainRunStatus.Canceled or TaskChainRunStatus.OverTime or TaskChainRunStatus.Rejected => "ops-pill-danger",
+        _ => "ops-pill-idle"
+    };
+
+    private static string GetWorkflowStatusLabel(WorkflowExecutionStatus? status) => status?.ToString() ?? "Idle";
+
+    private static string GetWorkflowStatusPillClass(WorkflowExecutionStatus? status) => status switch
+    {
+        WorkflowExecutionStatus.Starting or WorkflowExecutionStatus.Running => "ops-pill-running",
+        WorkflowExecutionStatus.Paused => "ops-pill-paused",
+        WorkflowExecutionStatus.Completed => "ops-pill-ready",
+        WorkflowExecutionStatus.Failed or WorkflowExecutionStatus.Canceled => "ops-pill-danger",
+        WorkflowExecutionStatus.Ready => "ops-pill-ready",
+        _ => "ops-pill-idle"
+    };
+
+    private static string FormatTaskChainRoute(SeerTaskRuntimeStatus? runtime)
+        => runtime is null ? "-" : $"{runtime.SourceName ?? "-"} -> {runtime.TargetName ?? "-"}";
+
+    private static string FormatTaskChainProgress(SeerTaskRuntimeStatus? runtime)
+        => runtime?.Percentage is null ? "-" : $"{runtime.Percentage.Value * 100:0.#}%";
+
+    private sealed record ReadinessItem(string Label, string Value, bool IsHealthy);
+}

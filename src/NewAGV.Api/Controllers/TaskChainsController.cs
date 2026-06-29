@@ -16,6 +16,13 @@ public sealed class TaskChainsController(TaskChainCoordinator coordinator) : Con
         return Ok(result);
     }
 
+    [HttpPost("sync")]
+    public async Task<ActionResult<IReadOnlyList<SeerTaskChainSummary>>> SyncTaskChains(CancellationToken cancellationToken)
+    {
+        var result = await coordinator.SyncTaskChainsAsync(cancellationToken);
+        return Ok(result);
+    }
+
     [HttpGet("active-run")]
     public ActionResult<TaskChainRunSnapshot?> GetActiveRun([FromQuery] string? robotId)
     {

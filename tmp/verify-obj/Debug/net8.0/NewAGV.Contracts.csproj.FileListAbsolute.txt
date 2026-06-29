@@ -1,0 +1,6 @@
+C:\Users\TD-997\Documents\NewAGV\tmp\verify-obj\Debug\net8.0\NewAGV.Contracts.csproj.AssemblyReference.cache
+C:\Users\TD-997\Documents\NewAGV\tmp\verify-obj\Debug\net8.0\NewAGV.Contracts.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\TD-997\Documents\NewAGV\tmp\verify-obj\Debug\net8.0\NewAGV.Contracts.AssemblyInfoInputs.cache
+C:\Users\TD-997\Documents\NewAGV\tmp\verify-obj\Debug\net8.0\NewAGV.Contracts.AssemblyInfo.cs
+C:\Users\TD-997\Documents\NewAGV\tmp\verify-obj\Debug\net8.0\NewAGV.Contracts.csproj.CoreCompileInputs.cache
+C:\Users\TD-997\Documents\NewAGV\tmp\verify-obj\Debug\net8.0\NewAGV.Contracts.sourcelink.json

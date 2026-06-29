@@ -1,9 +1,8 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using NewAGV.Api.Data;
-using NewAGV.Api.Hubs;
+using Microsoft.Extensions.Options;
 using NewAGV.Contracts;
+using NewAGV.Persistence;
 
 namespace NewAGV.Api.Services;
 
@@ -13,7 +12,9 @@ public sealed class WorkflowExecutionService(
     WorkflowValidationService validationService,
     TaskChainCoordinator taskChainCoordinator,
     AgvPlantStore plantStore,
-    IHubContext<TelemetryHub> hubContext)
+    TelemetryEventPublisher telemetryPublisher,
+    IOptions<IntegrationOptions> integrationOptions,
+    SeerWorkerClient workerClient)
 {
     private static readonly string[] ActiveRunStatuses =
     [
@@ -70,6 +71,11 @@ public sealed class WorkflowExecutionService(
             throw new InvalidOperationException("Another TaskChain is already active on this robot.");
         }
 
+        if (integrationOptions.Value.UseWorkerWorkflowRuntime)
+        {
+            return await ExecuteWithWorkerRuntimeAsync(workflowId, request, cancellationToken);
+        }
+
         var definition = await dbContext.WorkflowDefinitions
             .Include(item => item.Steps.OrderBy(step => step.Sequence))
             .FirstAsync(item => item.Id == workflowId, cancellationToken);
@@ -106,6 +112,34 @@ public sealed class WorkflowExecutionService(
         return (await GetRunAsync(run.Id, cancellationToken))!;
     }
 
+    private async Task<WorkflowRunDto> ExecuteWithWorkerRuntimeAsync(
+        Guid workflowId,
+        ExecuteWorkflowRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await workerClient.StartWorkflowAsync(
+            new WorkerWorkflowStartRequest
+            {
+                WorkflowDefinitionId = workflowId,
+                RobotId = request.RobotId.Trim(),
+                TriggeredBy = NormalizeOptional(request.TriggeredBy)
+            },
+            cancellationToken);
+
+        if (result.Outcome != WorkerWorkflowRuntimeOutcome.Accepted)
+        {
+            throw new InvalidOperationException(result.Message ?? $"Worker workflow runtime rejected start with outcome {result.Outcome}.");
+        }
+
+        if (result.RunId is null)
+        {
+            throw new InvalidOperationException("Worker workflow runtime accepted start without a run id.");
+        }
+
+        return await GetRunAsync(result.RunId.Value, cancellationToken)
+            ?? throw new InvalidOperationException("Worker workflow runtime accepted start, but the run was not found.");
+    }
+
     public async Task<WorkflowRunDto?> GetRunAsync(Guid runId, CancellationToken cancellationToken)
     {
         var run = await dbContext.WorkflowRuns
@@ -135,37 +169,54 @@ public sealed class WorkflowExecutionService(
 
     public async Task<IReadOnlyList<WorkflowHistoryEntryDto>> GetHistoryAsync(string? robotId, CancellationToken cancellationToken)
     {
-        var query = dbContext.WorkflowRuns
+        var query = dbContext.WorkflowRunSteps
             .AsNoTracking()
-            .Include(item => item.WorkflowDefinition)
-            .Include(item => item.Steps)
+            .Include(item => item.WorkflowRun)
+            .ThenInclude(item => item.WorkflowDefinition)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(robotId))
         {
-            query = query.Where(item => item.RobotId == robotId);
+            query = query.Where(item => item.WorkflowRun.RobotId == robotId);
         }
 
-        var runs = await query.OrderByDescending(item => item.StartedAt).Take(50).ToListAsync(cancellationToken);
-        return runs.Select(run => new WorkflowHistoryEntryDto
+        var steps = await query
+            .Where(item => item.StartedAt != null || item.CompletedAt != null || item.Status != WorkflowStepExecutionStatus.Pending.ToString())
+            .OrderByDescending(item => item.StartedAt ?? item.WorkflowRun.StartedAt)
+            .ThenByDescending(item => item.WorkflowRun.StartedAt)
+            .ThenByDescending(item => item.Sequence)
+            .Take(200)
+            .ToListAsync(cancellationToken);
+
+        return steps.Select(step => new WorkflowHistoryEntryDto
         {
-            RunId = run.Id,
-            WorkflowDefinitionId = run.WorkflowDefinitionId,
-            WorkflowName = run.WorkflowDefinition.Name,
-            RobotId = run.RobotId,
-            StepSequence = run.CurrentStepSequence,
-            StepName = run.Steps.FirstOrDefault(step => step.Sequence == run.CurrentStepSequence)?.DisplayName
-                ?? run.Steps.FirstOrDefault(step => step.Sequence == run.CurrentStepSequence)?.TaskChainName,
-            Status = ParseWorkflowStatus(run.Status),
-            Message = run.ErrorMessage ?? run.Steps.OrderByDescending(step => step.Sequence).FirstOrDefault(step => !string.IsNullOrWhiteSpace(step.Message))?.Message,
-            StartedAt = run.StartedAt,
-            CompletedAt = run.CompletedAt
+            RunId = step.WorkflowRunId,
+            WorkflowDefinitionId = step.WorkflowRun.WorkflowDefinitionId,
+            WorkflowName = step.WorkflowRun.WorkflowDefinition.Name,
+            RobotId = step.WorkflowRun.RobotId,
+            StepSequence = step.Sequence,
+            StepName = string.IsNullOrWhiteSpace(step.DisplayName) ? step.TaskChainName : step.DisplayName,
+            Status = ParseStepStatus(step.Status),
+            Message = step.Message,
+            StartedAt = step.StartedAt ?? step.WorkflowRun.StartedAt,
+            CompletedAt = step.CompletedAt
         }).ToList();
     }
 
     public async Task<WorkflowRunDto> PauseAsync(WorkflowControlRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
     {
         var run = await RequireActiveRunAsync(request.RobotId, cancellationToken);
+
+        if (integrationOptions.Value.UseWorkerWorkflowRuntime)
+        {
+            await SendWorkerWorkflowControlAsync(
+                run,
+                "pause",
+                workerClient.PauseWorkflowAsync,
+                cancellationToken);
+            return (await GetRunAsync(run.Id, cancellationToken))!;
+        }
+
         var result = await taskChainCoordinator.PauseAsync(new TaskChainControlRequest { RobotId = run.RobotId }, requestedByRole, cancellationToken);
         if (result.Status == MissionCommandStatus.Rejected)
         {
@@ -179,6 +230,17 @@ public sealed class WorkflowExecutionService(
     public async Task<WorkflowRunDto> ResumeAsync(WorkflowControlRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
     {
         var run = await RequireActiveRunAsync(request.RobotId, cancellationToken);
+
+        if (integrationOptions.Value.UseWorkerWorkflowRuntime)
+        {
+            await SendWorkerWorkflowControlAsync(
+                run,
+                "resume",
+                workerClient.ResumeWorkflowAsync,
+                cancellationToken);
+            return (await GetRunAsync(run.Id, cancellationToken))!;
+        }
+
         var result = await taskChainCoordinator.ResumeAsync(new TaskChainControlRequest { RobotId = run.RobotId }, requestedByRole, cancellationToken);
         if (result.Status == MissionCommandStatus.Rejected)
         {
@@ -192,6 +254,17 @@ public sealed class WorkflowExecutionService(
     public async Task<WorkflowRunDto> CancelAsync(WorkflowControlRequest request, UserRole requestedByRole, CancellationToken cancellationToken)
     {
         var run = await RequireActiveRunAsync(request.RobotId, cancellationToken);
+
+        if (integrationOptions.Value.UseWorkerWorkflowRuntime)
+        {
+            await SendWorkerWorkflowControlAsync(
+                run,
+                "cancel",
+                workerClient.CancelWorkflowAsync,
+                cancellationToken);
+            return (await GetRunAsync(run.Id, cancellationToken))!;
+        }
+
         var result = await taskChainCoordinator.CancelAsync(new TaskChainControlRequest { RobotId = run.RobotId }, requestedByRole, cancellationToken);
         if (result.Status == MissionCommandStatus.Rejected)
         {
@@ -202,8 +275,32 @@ public sealed class WorkflowExecutionService(
         return (await GetRunAsync(run.Id, cancellationToken))!;
     }
 
+    private static async Task SendWorkerWorkflowControlAsync(
+        WorkflowRunEntity run,
+        string action,
+        Func<WorkerWorkflowControlRequest, CancellationToken, Task<WorkerWorkflowRuntimeResult>> sendAsync,
+        CancellationToken cancellationToken)
+    {
+        var result = await sendAsync(
+            new WorkerWorkflowControlRequest
+            {
+                RobotId = run.RobotId
+            },
+            cancellationToken);
+
+        if (result.Outcome != WorkerWorkflowRuntimeOutcome.Accepted)
+        {
+            throw new InvalidOperationException(result.Message ?? $"Worker workflow runtime rejected {action} with outcome {result.Outcome}.");
+        }
+    }
+
     public async Task MonitorActiveRunsAsync(CancellationToken cancellationToken)
     {
+        if (integrationOptions.Value.UseWorkerWorkflowRuntime)
+        {
+            return;
+        }
+
         var activeRuns = await dbContext.WorkflowRuns
             .Include(item => item.WorkflowDefinition)
             .Include(item => item.Steps.OrderBy(step => step.Sequence))
@@ -257,10 +354,10 @@ public sealed class WorkflowExecutionService(
         step.SeerTaskId ??= taskChainRun.Run.TaskId;
 
         var nextStatus = MapStepStatus(taskChainRun.Run.Status);
-        if (nextStatus is WorkflowStepExecutionStatus.Running or WorkflowStepExecutionStatus.Waiting or WorkflowStepExecutionStatus.Paused)
+        if (IsStepInProgress(nextStatus))
         {
             step.Status = nextStatus.ToString();
-            run.Status = nextStatus == WorkflowStepExecutionStatus.Paused ? WorkflowExecutionStatus.Paused.ToString() : WorkflowExecutionStatus.Running.ToString();
+            run.Status = MapInProgressWorkflowStatus(nextStatus).ToString();
             await dbContext.SaveChangesAsync(cancellationToken);
             await EmitAsync("workflow.updated", run, cancellationToken);
             return;
@@ -327,10 +424,12 @@ public sealed class WorkflowExecutionService(
             return;
         }
 
+        nextStep.TaskChainRunId = result.RunId;
         nextStep.SeerTaskId = result.TaskId;
-        nextStep.Status = MapStepStatus(result.Status).ToString();
+        var initialStepStatus = MapStepStatus(result.Status);
+        nextStep.Status = initialStepStatus.ToString();
         nextStep.Message = result.Message;
-        run.Status = WorkflowExecutionStatus.Running.ToString();
+        run.Status = MapInProgressWorkflowStatus(initialStepStatus).ToString();
         await dbContext.SaveChangesAsync(cancellationToken);
         await EmitAsync("workflow.updated", run, cancellationToken);
     }
@@ -438,8 +537,7 @@ public sealed class WorkflowExecutionService(
 
     private async Task EmitAsync(string eventType, WorkflowRunEntity run, CancellationToken cancellationToken)
     {
-        await hubContext.Clients.All.SendAsync(
-            "ReceiveTelemetry",
+        await telemetryPublisher.PublishAsync(
             new RealtimeEvent(eventType, DateTimeOffset.UtcNow, WorkflowRun: MapRun(run), Message: run.ErrorMessage),
             cancellationToken);
     }
@@ -472,6 +570,7 @@ public sealed class WorkflowExecutionService(
                 FailurePolicy = ParseFailurePolicy(step.FailurePolicy),
                 Note = step.Note,
                 Status = ParseStepStatus(step.Status),
+                TaskChainRunId = step.TaskChainRunId,
                 SeerTaskId = step.SeerTaskId,
                 StartedAt = step.StartedAt,
                 CompletedAt = step.CompletedAt,
@@ -499,8 +598,23 @@ public sealed class WorkflowExecutionService(
             TaskChainRunStatus.Completed => WorkflowStepExecutionStatus.Completed,
             TaskChainRunStatus.Canceled => WorkflowStepExecutionStatus.Canceled,
             TaskChainRunStatus.OverTime => WorkflowStepExecutionStatus.TimedOut,
-            TaskChainRunStatus.Failed or TaskChainRunStatus.Rejected or TaskChainRunStatus.UnknownTaskId => WorkflowStepExecutionStatus.Failed,
+            TaskChainRunStatus.UnknownTaskId => WorkflowStepExecutionStatus.Starting,
+            TaskChainRunStatus.Failed or TaskChainRunStatus.Rejected => WorkflowStepExecutionStatus.Failed,
             _ => WorkflowStepExecutionStatus.Starting
+        };
+
+    private static bool IsStepInProgress(WorkflowStepExecutionStatus status)
+        => status is WorkflowStepExecutionStatus.Starting
+            or WorkflowStepExecutionStatus.Waiting
+            or WorkflowStepExecutionStatus.Running
+            or WorkflowStepExecutionStatus.Paused;
+
+    private static WorkflowExecutionStatus MapInProgressWorkflowStatus(WorkflowStepExecutionStatus status)
+        => status switch
+        {
+            WorkflowStepExecutionStatus.Starting => WorkflowExecutionStatus.Starting,
+            WorkflowStepExecutionStatus.Paused => WorkflowExecutionStatus.Paused,
+            _ => WorkflowExecutionStatus.Running
         };
 
     private static bool IsTerminal(TaskChainRunStatus status)
@@ -519,6 +633,11 @@ public sealed class WorkflowExecutionService(
 
     private static bool IsMatchingTaskChainRun(WorkflowRunStepEntity step, TaskChainRunSnapshot snapshot)
     {
+        if (!string.IsNullOrWhiteSpace(step.TaskChainRunId))
+        {
+            return string.Equals(step.TaskChainRunId, snapshot.Run.RunId, StringComparison.OrdinalIgnoreCase);
+        }
+
         if (!string.IsNullOrWhiteSpace(step.SeerTaskId) &&
             !string.IsNullOrWhiteSpace(snapshot.Run.TaskId))
         {
@@ -535,7 +654,7 @@ public sealed class WorkflowExecutionService(
             return true;
         }
 
-        return snapshot.Run.StartedAt >= step.StartedAt.Value.AddSeconds(-5);
+        return snapshot.Run.StartedAt >= step.StartedAt.Value;
     }
 
     private static string? NormalizeOptional(string? value)

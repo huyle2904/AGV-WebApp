@@ -1,208 +1,556 @@
 @page "/commands"
 @implements IDisposable
+@implements IAsyncDisposable
 @inject PlantStateService State
 @inject AgvApiClient ApiClient
 @inject DemoRoleState RoleState
+@inject IJSRuntime JS
 
 <PageTitle>Command Center</PageTitle>
 
-<h1>Command Center</h1>
-<p class="page-intro">Send commands through the API and worker after the robot passes live safety checks.</p>
-
-@if (!State.IsInitialized)
-{
-    <p class="empty-state">Loading command context...</p>
-}
-else
-{
-    <section class="panel-grid">
-        <article class="panel">
-            <div class="panel-header">
-                <h2>Dispatch mission</h2>
-                <span class="pill">@RoleState.CurrentRole</span>
-            </div>
-
-            @if (State.Robots.Count == 0)
-            {
-                <div class="empty-panel">
-                    <strong>No robot available</strong>
-                    <span>Command dispatch is disabled until a real AGV source is connected.</span>
+<section class="ops-shell-fit">
+    <div class="ops-page">
+        <section class="ops-topbar">
+            <div class="ops-topbar-head">
+                <div class="ops-topbar-title">
+                    <h1>Command Center</h1>
+                    <p>Mission dispatch, realtime teleop, and relocate tools unified under one live safety gate.</p>
                 </div>
-            }
-            else
-            {
-                <EditForm Model="_request" OnValidSubmit="DispatchAsync" class="command-form">
-                    <label>
-                        <span>Robot</span>
-                        <select @bind="_request.RobotId">
-                            @foreach (var robot in State.Robots)
-                            {
-                                <option value="@robot.RobotId">@robot.Name (@robot.Mode)</option>
-                            }
-                        </select>
-                    </label>
+                <div class="ops-chip-row">
+                    <span class="ops-chip ops-chip-primary"><i data-lucide="user-round-cog" class="lucide-icon" aria-hidden="true"></i><span>@RoleState.CurrentRole</span></span>
+                    <span class="ops-chip @(SelectedRobot is null ? "ops-chip-danger" : GetConnectivityChipClass(SelectedRobot.Connectivity))"><i data-lucide="bot" class="lucide-icon" aria-hidden="true"></i><span>@(SelectedRobot?.RobotId ?? "No robot")</span></span>
+                    <span class="ops-chip @(CurrentPreflightReasons.Count == 0 ? "ops-chip-ok" : "ops-chip-danger")"><i data-lucide="shield-check" class="lucide-icon" aria-hidden="true"></i><span>@(CurrentPreflightReasons.Count == 0 ? "Ready to dispatch" : "Blocked")</span></span>
+                </div>
+            </div>
 
-                    <label>
-                        <span>Command</span>
-                        <select @bind="_selectedCommand">
-                            @foreach (var commandType in Enum.GetValues<MissionCommandType>())
-                            {
-                                <option value="@commandType">@commandType</option>
-                            }
-                        </select>
-                    </label>
+            <div class="ops-toolbar-row">
+                <div class="ops-tabs">
+                    <button type="button" class="ops-tab-button @(_selectedTab == "Mission" ? "active" : null)" @onclick='@(() => _selectedTab = "Mission")'><i data-lucide="send" class="lucide-icon" aria-hidden="true"></i><span>Mission</span></button>
+                    <button type="button" class="ops-tab-button @(_selectedTab == "Teleop" ? "active" : null)" @onclick='@(() => _selectedTab = "Teleop")'><i data-lucide="gamepad-2" class="lucide-icon" aria-hidden="true"></i><span>Teleop</span></button>
+                    <button type="button" class="ops-tab-button @(_selectedTab == "Relocate" ? "active" : null)" @onclick='@(() => _selectedTab = "Relocate")'><i data-lucide="crosshair" class="lucide-icon" aria-hidden="true"></i><span>Relocate</span></button>
+                </div>
 
-                    @if (_selectedCommand is MissionCommandType.GoToStation)
-                    {
-                        <label>
-                            <span>Target station</span>
-                            <select @bind="_request.TargetEntityId">
-                                @foreach (var station in State.MapEntities.Where(entity => entity.Type == MapEntityType.Station))
+                <div class="ops-chip-row">
+                    <span class="ops-chip ops-chip-muted"><i data-lucide="map-pinned" class="lucide-icon" aria-hidden="true"></i><span>@StationCount stations loaded</span></span>
+                    <span class="ops-chip @(SelectedRobotDetail?.Localization?.ReadyForNavigation == true ? "ops-chip-ok" : "ops-chip-warn")"><i data-lucide="locate-fixed" class="lucide-icon" aria-hidden="true"></i><span>@(SelectedRobotDetail?.Localization?.StatusLabel ?? "No localization")</span></span>
+                </div>
+            </div>
+        </section>
+
+        <div class="ops-three-pane">
+            <aside class="ops-sidebar">
+                <div class="ops-sidebar-scroll">
+                    <article class="ops-card ops-hero-card">
+                        <div class="ops-card-title">
+                            <div>
+                                <h2>Robot context</h2>
+                                <p class="ops-card-subtitle">The dispatch gate always evaluates against the currently selected robot.</p>
+                            </div>
+                        </div>
+
+                        @if (State.Robots.Count == 0)
+                        {
+                            <div class="ops-empty-state">
+                                <strong>No robot available</strong>
+                                <span>Command dispatch is disabled until a live AGV source is connected.</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="ops-field">
+                                <label>Robot</label>
+                                <select class="ops-side-select" @bind="_selectedRobotId" @bind:after="OnRobotSelectionChangedAsync">
+                                    @foreach (var robot in State.Robots)
+                                    {
+                                        <option value="@robot.RobotId">@robot.Name (@robot.Mode)</option>
+                                    }
+                                </select>
+                            </div>
+
+                            <div class="ops-hero-top">
+                                <div class="ops-hero-name">
+                                    <strong>@(SelectedRobot?.Name ?? "Unknown robot")</strong>
+                                    <span>@(SelectedRobot?.RobotId ?? "-") / @(SelectedRobot?.Mode.ToString() ?? "Unknown")</span>
+                                </div>
+                                <span class="ops-chip @(SelectedRobot is null ? "ops-chip-danger" : GetConnectivityChipClass(SelectedRobot.Connectivity))">@((SelectedRobot?.Connectivity.ToString()) ?? "Offline")</span>
+                            </div>
+
+                            <div class="ops-battery-row">
+                                <span class="ops-caption">Battery</span>
+                                <strong class="ops-battery-value">@((SelectedRobot?.BatteryPercent.ToString() ?? "--"))%</strong>
+                            </div>
+                            <div class="ops-battery-track">
+                                <span class="@GetBatteryClass(SelectedRobot?.BatteryPercent ?? 0)" style="width: @(SelectedRobot?.BatteryPercent ?? 0)%"></span>
+                            </div>
+
+                            <div class="ops-status-list">
+                                @foreach (var item in RobotContextItems)
                                 {
-                                    <option value="@station.EntityId">@station.Name (@station.EntityId)</option>
+                                    <div class="ops-status-row">
+                                        <span class="@GetReadinessDotClass(item.IsHealthy)"></span>
+                                        <div class="ops-status-copy">
+                                            <strong>@item.Label</strong>
+                                            <span class="ops-status-note">@item.Value</span>
+                                        </div>
+                                    </div>
                                 }
-                            </select>
-                        </label>
+                            </div>
 
-                        @if (!State.MapEntities.Any(entity => entity.Type == MapEntityType.Station))
-                        {
-                            <p class="inline-status">No target stations are configured yet.</p>
+                            @if (RobotAlarmItems.Count > 0)
+                            {
+                                <div class="ops-side-note">
+                                    <div class="ops-card-title">
+                                        <div>
+                                            <h2>Active alarms</h2>
+                                            <span>@RobotAlarmItems.Count items</span>
+                                        </div>
+                                    </div>
+                                    <div class="ops-alarm-list">
+                                        @foreach (var alarm in RobotAlarmItems.Take(4))
+                                        {
+                                            <div class="ops-alarm-item">
+                                                <span class="@GetAlarmDotClass(alarm.SeverityClass)"></span>
+                                                <div class="ops-status-copy">
+                                                    <strong>@alarm.Code</strong>
+                                                    <span class="ops-status-note">@alarm.Severity / @(alarm.Description ?? alarm.Describe ?? "No description")</span>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
                         }
-                    }
+                    </article>
+                </div>
+            </aside>
 
-                    @if (_selectedCommand == MissionCommandType.Teleop)
+            <section class="ops-main">
+                <div class="ops-main-scroll">
+                    @if (!State.IsInitialized)
                     {
-                        <div class="two-column">
-                            <label>
-                                <span>Velocity X</span>
-                                <input type="number" step="0.1" @bind="_velocityX" />
-                            </label>
-                            <label>
-                                <span>Velocity Y</span>
-                                <input type="number" step="0.1" @bind="_velocityY" />
-                            </label>
+                        <div class="ops-empty-state">
+                            <strong>Loading command context</strong>
+                            <span>Waiting for policies, robot details, map entities, and audit state.</span>
                         </div>
                     }
-
-                    <label class="checkbox-row">
-                        <input type="checkbox" @bind="_request.Confirmed" />
-                        <span>I confirm this command should be sent to the robot.</span>
-                    </label>
-
-                    @if (PreflightReasons.Count > 0)
+                    else if (State.Robots.Count == 0)
                     {
-                        <div class="preflight-panel">
-                            <strong>Command blocked</strong>
-                            @foreach (var reason in PreflightReasons)
+                        <div class="ops-empty-state">
+                            <strong>No robot available</strong>
+                            <span>Commands, teleop, and relocate actions remain locked until at least one robot comes online.</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <article class="ops-panel">
+                            <div class="ops-panel-title">
+                                <div>
+                                    <h2>@GetCenterPanelTitle()</h2>
+                                    <span>@GetCenterPanelSubtitle()</span>
+                                </div>
+                                <span class="ops-chip @(CurrentPreflightReasons.Count == 0 ? "ops-chip-ok" : "ops-chip-danger")">@GetDispatchStateLabel()</span>
+                            </div>
+
+                            @if (_selectedTab != "Teleop" && CurrentPreflightReasons.Count > 0)
                             {
-                                <span>@reason</span>
+                                <div class="ops-preflight">
+                                    <strong>Action blocked</strong>
+                                    @foreach (var reason in CurrentPreflightReasons)
+                                    {
+                                        <span>@reason</span>
+                                    }
+                                </div>
+                            }
+                            else if (_selectedTab != "Teleop" && CurrentWarningReasons.Count > 0)
+                            {
+                                <div class="ops-preflight-warning">
+                                    <strong>Check before dispatch</strong>
+                                    @foreach (var reason in CurrentWarningReasons)
+                                    {
+                                        <span>@reason</span>
+                                    }
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(_statusMessage))
+                            {
+                                <div class="ops-runtime-strip">
+                                    <strong>Latest result</strong>
+                                    <span>@_statusMessage</span>
+                                </div>
+                            }
+
+                            @if (_selectedTab == "Mission")
+                            {
+                                <EditForm Model="_missionRequest" OnValidSubmit="DispatchMissionAsync" class="ops-command-form">
+                                    <div class="ops-field-grid">
+                                        <div class="ops-field">
+                                            <label>Mission command</label>
+                                            <select @bind="_selectedMissionCommand" @bind:after="OnMissionCommandChangedAsync">
+                                                @foreach (var commandType in MissionCommandOptions)
+                                                {
+                                                    <option value="@commandType">@commandType</option>
+                                                }
+                                            </select>
+                                        </div>
+
+                                        <div class="ops-field">
+                                            <label>Robot</label>
+                                            <input value="@_selectedRobotId" readonly />
+                                        </div>
+                                    </div>
+
+                                    @if (_selectedMissionCommand == MissionCommandType.GoToStation)
+                                    {
+                                        <div class="ops-field">
+                                            <label>Target station</label>
+                                            <select @bind="_missionRequest.TargetEntityId">
+                                                @foreach (var station in Stations)
+                                                {
+                                                    <option value="@station.EntityId">@station.Name (@station.EntityId)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    }
+
+                                    <label class="ops-checkbox">
+                                        <input type="checkbox" @bind="_missionRequest.Confirmed" />
+                                        <span>I confirm this mission should be sent through the command gateway.</span>
+                                    </label>
+
+                                    <div class="ops-inline-actions">
+                                        <button class="ops-toolbar-button ops-toolbar-button-primary" type="submit" disabled="@IsMissionDispatchDisabled"><i data-lucide="send" class="lucide-icon" aria-hidden="true"></i><span>Dispatch mission</span></button>
+                                        <span class="ops-caption">@GetMissionHint()</span>
+                                    </div>
+                                </EditForm>
+                            }
+                            else if (_selectedTab == "Teleop")
+                            {
+                                <div class="ops-command-form">
+                                    <div class="ops-teleop-panel">
+                                        <div class="ops-teleop-meta">
+                                            <span class="ops-pill-status @(IsTeleopLocked ? "ops-pill-danger" : "ops-pill-ready")">@GetTeleopModeLabel()</span>
+                                            <span class="ops-caption">Hold W/A/S/D to drive. Releasing keys sends stop.</span>
+                                        </div>
+
+                                        <div class="ops-teleop-pad" aria-label="Teleop WASD pad">
+                                            <div class="ops-teleop-pad-gap"></div>
+                                            <button type="button"
+                                                    class="@GetTeleopKeyClass(_teleopKeyWActive)"
+                                                    @onpointerdown='@(() => SetTeleopPointerKeyAsync("w", true))'
+                                                    @onpointerup='@(() => SetTeleopPointerKeyAsync("w", false))'
+                                                    @onpointerleave='@(() => SetTeleopPointerKeyAsync("w", false))'
+                                                    disabled="@IsTeleopLocked">W</button>
+                                            <div class="ops-teleop-pad-gap"></div>
+
+                                            <button type="button"
+                                                    class="@GetTeleopKeyClass(_teleopKeyAActive)"
+                                                    @onpointerdown='@(() => SetTeleopPointerKeyAsync("a", true))'
+                                                    @onpointerup='@(() => SetTeleopPointerKeyAsync("a", false))'
+                                                    @onpointerleave='@(() => SetTeleopPointerKeyAsync("a", false))'
+                                                    disabled="@IsTeleopLocked">A</button>
+                                            <button type="button"
+                                                    class="@GetTeleopKeyClass(_teleopKeySActive)"
+                                                    @onpointerdown='@(() => SetTeleopPointerKeyAsync("s", true))'
+                                                    @onpointerup='@(() => SetTeleopPointerKeyAsync("s", false))'
+                                                    @onpointerleave='@(() => SetTeleopPointerKeyAsync("s", false))'
+                                                    disabled="@IsTeleopLocked">S</button>
+                                            <button type="button"
+                                                    class="@GetTeleopKeyClass(_teleopKeyDActive)"
+                                                    @onpointerdown='@(() => SetTeleopPointerKeyAsync("d", true))'
+                                                    @onpointerup='@(() => SetTeleopPointerKeyAsync("d", false))'
+                                                    @onpointerleave='@(() => SetTeleopPointerKeyAsync("d", false))'
+                                                    disabled="@IsTeleopLocked">D</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="ops-command-form">
+                                    <div class="ops-warning-strip">
+                                        <strong>High-risk action</strong>
+                                        <span>Relocation changes the robot pose reference and should only be used with validated field coordinates.</span>
+                                    </div>
+
+                                    <div class="ops-field-grid">
+                                        <div class="ops-field">
+                                            <label>X</label>
+                                            <input type="number" step="0.1" @bind="_relocateX" />
+                                        </div>
+                                        <div class="ops-field">
+                                            <label>Y</label>
+                                            <input type="number" step="0.1" @bind="_relocateY" />
+                                        </div>
+                                        <div class="ops-field">
+                                            <label>Angle</label>
+                                            <input type="number" step="0.1" @bind="_relocateAngle" />
+                                        </div>
+                                        <div class="ops-field">
+                                            <label>Robot</label>
+                                            <input value="@_selectedRobotId" readonly />
+                                        </div>
+                                    </div>
+
+                                    <label class="ops-checkbox">
+                                        <input type="checkbox" @bind="_relocateConfirmed" />
+                                        <span>I confirm the relocation target is correct for the selected robot and current map.</span>
+                                    </label>
+
+                                    <div class="ops-inline-actions">
+                                        <button type="button" class="ops-toolbar-button ops-toolbar-button-danger" @onclick="SendRelocateAsync" disabled="@IsRelocateDispatchDisabled"><i data-lucide="crosshair" class="lucide-icon" aria-hidden="true"></i><span>Send relocate</span></button>
+                                        <span class="ops-caption">The same motion preflight gate is applied here before the request can be sent.</span>
+                                    </div>
+                                </div>
+                            }
+                        </article>
+                    }
+                </div>
+            </section>
+
+            <aside class="ops-inspector">
+                <div class="ops-inspector-scroll">
+                    <article class="ops-card">
+                        <div class="ops-card-title">
+                            <div>
+                                <h2>Safety gate</h2>
+                                <span>Live preflight, warnings, and policy fit for the selected action.</span>
+                            </div>
+                            <span class="ops-pill-status @(CurrentPreflightReasons.Count == 0 ? "ops-pill-ready" : "ops-pill-danger")">@GetDispatchStateLabel()</span>
+                        </div>
+
+                        <div class="ops-compact-list">
+                            @foreach (var item in SafetyInspectorItems)
+                            {
+                                <div class="ops-compact-row">
+                                    <span>@item.Label</span>
+                                    <strong>@item.Value</strong>
+                                </div>
                             }
                         </div>
-                    }
-                    else if (WarningReasons.Count > 0)
-                    {
-                        <div class="preflight-panel preflight-warning">
-                            <strong>Check before dispatch</strong>
-                            @foreach (var reason in WarningReasons)
-                            {
-                                <span>@reason</span>
-                            }
+                    </article>
+
+                    <article class="ops-card">
+                        <div class="ops-card-title">
+                            <div>
+                                <h2>Applicable policy</h2>
+                                <span>Dispatch policy currently matched to the active command surface.</span>
+                            </div>
                         </div>
-                    }
 
-                    <button class="primary-button" type="submit" disabled="@IsDispatchDisabled">Dispatch command</button>
-                </EditForm>
-            }
-
-            @if (!string.IsNullOrWhiteSpace(_statusMessage))
-            {
-                <p class="inline-status">@_statusMessage</p>
-            }
-        </article>
-
-        <article class="panel">
-            <div class="panel-header">
-                <h2>Current control policies</h2>
-            </div>
-            <div class="table-shell">
-                <table class="app-table">
-                    <thead>
-                        <tr>
-                            <th>Command</th>
-                            <th>Role</th>
-                            <th>Confirm</th>
-                            <th>Enabled</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var policy in State.Policies)
+                        @if (CurrentPolicy is null)
                         {
-                            <tr>
-                                <td>@policy.CommandType</td>
-                                <td>@policy.MinimumRole</td>
-                                <td>@(policy.RequiresConfirmation ? "Yes" : "No")</td>
-                                <td>@(policy.Enabled ? "Yes" : "No")</td>
-                            </tr>
+                            <div class="ops-empty-state">
+                                <strong>No exact policy entry</strong>
+                                <span>Relocate uses the shared motion-safety gate and role header, but it does not have a dedicated policy record in the current API contract.</span>
+                            </div>
                         }
-                    </tbody>
-                </table>
-            </div>
-        </article>
-    </section>
-}
+                        else
+                        {
+                            <div class="ops-kv-grid">
+                                <div class="ops-kv"><span>Command</span><strong>@CurrentPolicy.CommandType</strong></div>
+                                <div class="ops-kv"><span>Minimum role</span><strong>@CurrentPolicy.MinimumRole</strong></div>
+                                <div class="ops-kv"><span>Confirmation</span><strong>@(CurrentPolicy.RequiresConfirmation ? "Required" : "Not required")</strong></div>
+                                <div class="ops-kv"><span>Enabled</span><strong>@(CurrentPolicy.Enabled ? "Yes" : "No")</strong></div>
+                            </div>
+                        }
+                    </article>
+
+                    <article class="ops-card">
+                        <div class="ops-card-title">
+                            <div>
+                                <h2>Recent results</h2>
+                                <span>@FilteredAuditEntries.Count entries for @(_selectedRobotId ?? "selected robot")</span>
+                            </div>
+                        </div>
+
+                        @if (FilteredAuditEntries.Count == 0)
+                        {
+                            <div class="ops-empty-state">
+                                <strong>No matching audit entries</strong>
+                                <span>Command results for the selected robot will appear here once the worker acknowledges them.</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="ops-event-list">
+                                @foreach (var entry in FilteredAuditEntries)
+                                {
+                                    <div class="ops-event-item">
+                                        <span class="@GetAuditDotClass(entry.Status)"></span>
+                                        <div class="ops-event-copy">
+                                            <div class="ops-event-title">@entry.Operation</div>
+                                            <div class="ops-event-meta">@entry.Status / @entry.RequestedByRole / @entry.OccurredAt.ToLocalTime().ToString("HH:mm:ss")</div>
+                                            <div class="ops-inline-note">@entry.Message</div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </article>
+                </div>
+            </aside>
+        </div>
+    </div>
+</section>
 
 @code {
-    private MissionCommandRequest _request = new("AGV-01", MissionCommandType.GoToStation, null, null, null, true);
-    private MissionCommandType _selectedCommand = MissionCommandType.GoToStation;
-    private double? _velocityX;
-    private double? _velocityY;
+    private string _selectedTab = "Mission";
+    private string? _selectedRobotId;
+    private MissionCommandRequest _missionRequest = new(string.Empty, MissionCommandType.GoToStation, null, null, null, true);
+    private MissionCommandType _selectedMissionCommand = MissionCommandType.GoToStation;
+    private double _teleopKeyboardCommandX;
+    private double _teleopKeyboardCommandAz;
+    private bool _teleopKeyWActive;
+    private bool _teleopKeyAActive;
+    private bool _teleopKeySActive;
+    private bool _teleopKeyDActive;
+    private bool _teleopKeyboardActive;
+    private bool _teleopSendInFlight;
+    private bool _hasQueuedTeleopCommand;
+    private double _queuedTeleopVelocityX;
+    private double _queuedTeleopAngularVelocity;
+    private double _lastDispatchedTeleopVelocityX = double.NaN;
+    private double _lastDispatchedTeleopAngularVelocity = double.NaN;
+    private DateTimeOffset _lastTeleopDispatchAt = DateTimeOffset.MinValue;
+    private DotNetObjectReference<Commands>? _teleopReference;
+    private double _relocateX;
+    private double _relocateY;
+    private double _relocateAngle;
+    private bool _relocateConfirmed;
     private string? _statusMessage;
+    private const int TeleopDispatchIntervalMs = 125;
+    private const double TeleopLinearSpeed = 0.5;
+    private const double TeleopAngularSpeed = 0.45;
 
-    private RobotSummary? SelectedRobot => State.Robots.FirstOrDefault(robot => robot.RobotId == _request.RobotId);
+    private static IReadOnlyList<MissionCommandType> MissionCommandOptions { get; } =
+        Enum.GetValues<MissionCommandType>()
+            .Where(command => command != MissionCommandType.Teleop)
+            .ToArray();
 
-    private RobotTelemetryDetail? SelectedRobotDetail =>
-        string.IsNullOrWhiteSpace(_request.RobotId)
+    private RobotSummary? SelectedRobot => State.Robots.FirstOrDefault(robot => robot.RobotId == _selectedRobotId);
+
+    private RobotTelemetryDetail? SelectedRobotDetail
+        => string.IsNullOrWhiteSpace(_selectedRobotId)
             ? null
-            : State.RobotDetails.GetValueOrDefault(_request.RobotId);
+            : State.RobotDetails.GetValueOrDefault(_selectedRobotId);
 
-    private bool IsDispatchDisabled =>
-        State.Robots.Count == 0 ||
-        (_selectedCommand is MissionCommandType.GoToStation &&
-         !State.MapEntities.Any(entity => entity.Type == MapEntityType.Station)) ||
-        PreflightReasons.Count > 0;
+    private IReadOnlyList<MapEntity> Stations
+        => State.MapEntities
+            .Where(entity => entity.Type == MapEntityType.Station)
+            .OrderBy(entity => entity.Name)
+            .ToList();
 
-    private IReadOnlyList<string> PreflightReasons => BuildPreflightReasons();
+    private int StationCount => Stations.Count;
 
-    private IReadOnlyList<string> WarningReasons => BuildWarningReasons();
+    private IReadOnlyList<string> CurrentPreflightReasons => _selectedTab switch
+    {
+        "Teleop" => BuildMotionPreflightReasons(includeStationRequirement: false),
+        "Relocate" => BuildMotionPreflightReasons(includeStationRequirement: false),
+        _ => BuildMissionPreflightReasons()
+    };
+
+    private IReadOnlyList<string> CurrentWarningReasons => BuildWarningReasons();
+
+    private bool IsMissionDispatchDisabled
+        => State.Robots.Count == 0
+           || CurrentPreflightReasons.Count > 0
+           || (_selectedMissionCommand == MissionCommandType.GoToStation && Stations.Count == 0)
+           || (_selectedMissionCommand == MissionCommandType.GoToStation && string.IsNullOrWhiteSpace(_missionRequest.TargetEntityId));
+
+    private bool IsTeleopLocked
+        => State.Robots.Count == 0
+           || SelectedRobot is null;
+
+    private bool IsRelocateDispatchDisabled
+        => State.Robots.Count == 0
+           || CurrentPreflightReasons.Count > 0
+           || !_relocateConfirmed;
+
+    private ControlPolicy? CurrentPolicy => _selectedTab switch
+    {
+        "Teleop" => State.Policies.FirstOrDefault(policy => policy.CommandType == MissionCommandType.Teleop),
+        "Mission" => State.Policies.FirstOrDefault(policy => policy.CommandType == _selectedMissionCommand),
+        _ => null
+    };
+
+    private IReadOnlyList<AuditEntryView> FilteredAuditEntries
+        => State.AuditEntries
+            .Where(entry => string.IsNullOrWhiteSpace(_selectedRobotId) || entry.RobotId == _selectedRobotId)
+            .Take(8)
+            .Select(entry => new AuditEntryView(entry.DisplayOperation, entry.Status, entry.RequestedByRole, entry.Message, entry.OccurredAt))
+            .ToList();
+
+    private IReadOnlyList<ReadinessItem> RobotContextItems
+        => SelectedRobot is null
+            ? []
+            : [
+                new("Localization", SelectedRobotDetail?.Localization?.StatusLabel ?? "Unknown", SelectedRobotDetail?.Localization?.ReadyForNavigation == true),
+                new("E-stop", FormatEstop(), !IsEmergencyActive()),
+                new("Control owner", FormatControlOwner(), SelectedRobotDetail?.ControlOwner?.Locked != true),
+                new("Alarm state", GetAlarmSummary(), SelectedRobotDetail?.Alarm is not { FatalCount: > 0 } and not { ErrorCount: > 0 }),
+                new("Current task", SelectedRobot.CurrentTask ?? "Idle", true),
+                new("Map", SelectedRobotDetail?.CurrentMap ?? "No active map", true)
+            ];
+
+    private IReadOnlyList<AlarmDisplayItem> RobotAlarmItems
+        => SelectedRobotDetail?.Alarm is null
+            ? []
+            : SelectedRobotDetail.Alarm.Fatals.Select(item => AlarmDisplayItem.From("Fatal", "danger", item))
+                .Concat(SelectedRobotDetail.Alarm.Errors.Select(item => AlarmDisplayItem.From("Error", "danger", item)))
+                .Concat(SelectedRobotDetail.Alarm.Warnings.Select(item => AlarmDisplayItem.From("Warning", "warn", item)))
+                .Concat(SelectedRobotDetail.Alarm.Notices.Select(item => AlarmDisplayItem.From("Notice", "good", item)))
+                .ToList();
+
+    private IReadOnlyList<InspectorItem> SafetyInspectorItems
+        => [
+            new("Selected robot", SelectedRobot?.RobotId ?? "None"),
+            new("Active tab", _selectedTab),
+            new("Blocking reasons", CurrentPreflightReasons.Count.ToString()),
+            new("Warnings", CurrentWarningReasons.Count.ToString()),
+            new("Policy gate", CurrentPolicy?.MinimumRole.ToString() ?? "Motion safety gate"),
+            new("Control mode", _selectedTab == "Teleop" ? "Direct keyboard drive" : "Command dispatch")
+        ];
+
+    private bool ShouldEnableTeleopKeyboard
+        => State.IsInitialized
+           && _selectedTab == "Teleop"
+           && !IsTeleopLocked;
 
     protected override async Task OnInitializedAsync()
     {
         State.Changed += OnStateChanged;
         await State.EnsureInitializedAsync();
-        if (State.Robots.Count > 0)
-        {
-            _request.RobotId = State.Robots[0].RobotId;
-        }
-
-        EnsureDefaultTarget();
+        EnsureDefaults();
     }
 
-    private async Task DispatchAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (IsDispatchDisabled)
-        {
-            _statusMessage = PreflightReasons.Count == 0
-                ? "Command dispatch is disabled until robots and required map targets are configured."
-                : string.Join(" ", PreflightReasons);
-            return;
-        }
+        await SyncTeleopKeyboardAsync();
+    }
 
-        var request = _request with
+    private Task OnMissionCommandChangedAsync()
+    {
+        EnsureDefaultStation();
+        return Task.CompletedTask;
+    }
+
+    private Task OnRobotSelectionChangedAsync()
+    {
+        SyncRequestsToRobot();
+        EnsureDefaultStation();
+        return Task.CompletedTask;
+    }
+
+    private async Task DispatchMissionAsync()
+    {
+        var request = _missionRequest with
         {
-            CommandType = _selectedCommand,
-            VelocityX = _selectedCommand == MissionCommandType.Teleop ? _velocityX : null,
-            VelocityY = _selectedCommand == MissionCommandType.Teleop ? _velocityY : null,
-            TargetEntityId = _selectedCommand == MissionCommandType.ReturnToHome ? null : _request.TargetEntityId
+            RobotId = _selectedRobotId ?? string.Empty,
+            CommandType = _selectedMissionCommand,
+            VelocityX = null,
+            VelocityY = null,
+            TargetEntityId = _selectedMissionCommand == MissionCommandType.ReturnToHome ? null : _missionRequest.TargetEntityId
         };
 
         var result = await ApiClient.DispatchAsync(request, RoleState.CurrentRole);
@@ -210,7 +558,47 @@ else
         await State.RefreshAuditAsync();
     }
 
-    private IReadOnlyList<string> BuildPreflightReasons()
+    private async Task SendRelocateAsync()
+    {
+        var result = await ApiClient.RelocateAsync(
+            new SeerRelocationRequest(_relocateX, _relocateY, _relocateAngle),
+            RoleState.CurrentRole);
+        _statusMessage = result.Message;
+        await State.RefreshAuditAsync();
+    }
+
+    [JSInvokable]
+    public async Task OnTeleopKeyboardStateChanged(double axisX, double axisAz, bool keyW, bool keyA, bool keyS, bool keyD)
+    {
+        _teleopKeyWActive = keyW;
+        _teleopKeyAActive = keyA;
+        _teleopKeySActive = keyS;
+        _teleopKeyDActive = keyD;
+
+        if (!ShouldEnableTeleopKeyboard)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _teleopKeyboardCommandX = ComputeKeyboardVelocity(axisX, TeleopLinearSpeed);
+        _teleopKeyboardCommandAz = ComputeKeyboardVelocity(axisAz, TeleopAngularSpeed);
+
+        await InvokeAsync(StateHasChanged);
+        await QueueTeleopCommandAsync(_teleopKeyboardCommandX, _teleopKeyboardCommandAz);
+    }
+
+    private async Task SetTeleopPointerKeyAsync(string key, bool isPressed)
+    {
+        if (!ShouldEnableTeleopKeyboard)
+        {
+            return;
+        }
+
+        await JS.InvokeVoidAsync("teleop.setPointerKey", key, isPressed);
+    }
+
+    private IReadOnlyList<string> BuildMissionPreflightReasons()
     {
         if (State.Robots.Count == 0)
         {
@@ -218,42 +606,67 @@ else
         }
 
         var reasons = new List<string>();
-        var robot = SelectedRobot;
-        var detail = SelectedRobotDetail;
-
-        if (robot?.Connectivity != ConnectivityStatus.Online)
+        if (SelectedRobot?.Connectivity != ConnectivityStatus.Online)
         {
             reasons.Add("Robot TCP link is not online.");
         }
 
-        if (_selectedCommand is MissionCommandType.GoToStation &&
-            !State.MapEntities.Any(entity => entity.Type == MapEntityType.Station))
+        if (_selectedMissionCommand == MissionCommandType.GoToStation && Stations.Count == 0)
         {
             reasons.Add("No station has been loaded from the current map.");
         }
 
-        if (IsMotionCommand(_selectedCommand))
+        if (_selectedMissionCommand == MissionCommandType.GoToStation && string.IsNullOrWhiteSpace(_missionRequest.TargetEntityId))
         {
-            if (detail?.Estop?.Emergency == true || detail?.Estop?.DriverEmergency == true || detail?.Estop?.SoftEmergency == true)
-            {
-                reasons.Add("E-stop or driver emergency is active.");
-            }
+            reasons.Add("A target station must be selected.");
+        }
 
-            if (detail?.ControlOwner?.Locked == true)
-            {
-                var owner = detail.ControlOwner.NickName ?? detail.ControlOwner.Ip ?? "another controller";
-                reasons.Add($"Robot control is locked by {owner}.");
-            }
+        if (IsMotionMission(_selectedMissionCommand))
+        {
+            reasons.AddRange(BuildMotionPreflightReasons(includeStationRequirement: false));
+        }
 
-            if (detail?.Alarm is { FatalCount: > 0 } or { ErrorCount: > 0 })
-            {
-                reasons.Add("Robot has active fatal/error alarms.");
-            }
+        return reasons;
+    }
 
-            if (detail?.Localization?.ReadyForNavigation != true)
-            {
-                reasons.Add($"Localization is not ready: {detail?.Localization?.StatusLabel ?? "unknown"}.");
-            }
+    private IReadOnlyList<string> BuildMotionPreflightReasons(bool includeStationRequirement)
+    {
+        if (State.Robots.Count == 0)
+        {
+            return ["No robot is connected."];
+        }
+
+        var reasons = new List<string>();
+
+        if (SelectedRobot?.Connectivity != ConnectivityStatus.Online)
+        {
+            reasons.Add("Robot TCP link is not online.");
+        }
+
+        if (includeStationRequirement && Stations.Count == 0)
+        {
+            reasons.Add("No station has been loaded from the current map.");
+        }
+
+        if (SelectedRobotDetail?.Estop?.Emergency == true || SelectedRobotDetail?.Estop?.DriverEmergency == true || SelectedRobotDetail?.Estop?.SoftEmergency == true)
+        {
+            reasons.Add("E-stop or driver emergency is active.");
+        }
+
+        if (SelectedRobotDetail?.ControlOwner?.Locked == true)
+        {
+            var owner = SelectedRobotDetail.ControlOwner.NickName ?? SelectedRobotDetail.ControlOwner.Ip ?? "another controller";
+            reasons.Add($"Robot control is locked by {owner}.");
+        }
+
+        if (SelectedRobotDetail?.Alarm is { FatalCount: > 0 } or { ErrorCount: > 0 })
+        {
+            reasons.Add("Robot has active fatal/error alarms.");
+        }
+
+        if (SelectedRobotDetail?.Localization?.ReadyForNavigation != true)
+        {
+            reasons.Add($"Localization is not ready: {SelectedRobotDetail?.Localization?.StatusLabel ?? "unknown"}.");
         }
 
         return reasons;
@@ -261,49 +674,318 @@ else
 
     private IReadOnlyList<string> BuildWarningReasons()
     {
-        var detail = SelectedRobotDetail;
-        if (detail?.Alarm is null || detail.Alarm.WarningCount == 0)
+        if (SelectedRobotDetail?.Alarm is null || SelectedRobotDetail.Alarm.WarningCount == 0)
         {
             return [];
         }
 
-        return [$"Robot reports {detail.Alarm.WarningCount} active warning(s). Review readiness before moving."];
+        return [$"Robot reports {SelectedRobotDetail.Alarm.WarningCount} active warning(s). Review readiness before sending {_selectedTab.ToLowerInvariant()} actions."];
     }
 
-    private static bool IsMotionCommand(MissionCommandType commandType)
-        => commandType is MissionCommandType.GoToStation
-            or MissionCommandType.ReturnToHome
-            or MissionCommandType.Resume
-            or MissionCommandType.Teleop;
-
-    private void EnsureDefaultTarget()
+    private async Task SyncTeleopKeyboardAsync()
     {
-        if (_selectedCommand is not MissionCommandType.GoToStation)
+        if (ShouldEnableTeleopKeyboard)
+        {
+            if (_teleopKeyboardActive)
+            {
+                return;
+            }
+
+            _teleopReference ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("teleop.start", _teleopReference, TeleopDispatchIntervalMs);
+            _teleopKeyboardActive = true;
+            return;
+        }
+
+        if (_teleopKeyboardActive)
+        {
+            await StopTeleopKeyboardAsync(sendStop: true);
+        }
+    }
+
+    private async Task StopTeleopKeyboardAsync(bool sendStop)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("teleop.stop");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        _teleopKeyboardActive = false;
+        _teleopKeyboardCommandX = 0;
+        _teleopKeyboardCommandAz = 0;
+        _teleopKeyWActive = false;
+        _teleopKeyAActive = false;
+        _teleopKeySActive = false;
+        _teleopKeyDActive = false;
+
+        if (sendStop)
+        {
+            await SendTeleopCommandAsync(0, 0, refreshAudit: false, force: true);
+        }
+    }
+
+    private async Task QueueTeleopCommandAsync(double velocityX, double angularVelocity)
+    {
+        _queuedTeleopVelocityX = velocityX;
+        _queuedTeleopAngularVelocity = angularVelocity;
+        _hasQueuedTeleopCommand = true;
+
+        if (_teleopSendInFlight)
         {
             return;
         }
 
-        var selectedStationExists = State.MapEntities.Any(entity =>
-            entity.Type == MapEntityType.Station &&
-            entity.EntityId == _request.TargetEntityId);
+        _teleopSendInFlight = true;
+        try
+        {
+            while (_hasQueuedTeleopCommand)
+            {
+                _hasQueuedTeleopCommand = false;
+                await SendTeleopCommandAsync(_queuedTeleopVelocityX, _queuedTeleopAngularVelocity, refreshAudit: false);
+            }
+        }
+        finally
+        {
+            _teleopSendInFlight = false;
+        }
+    }
 
+    private async Task SendTeleopCommandAsync(double velocityX, double angularVelocity, bool refreshAudit, bool force = false)
+    {
+        if (!force && State.Robots.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (!force
+            && AreClose(_lastDispatchedTeleopVelocityX, velocityX)
+            && AreClose(_lastDispatchedTeleopAngularVelocity, angularVelocity)
+            && (now - _lastTeleopDispatchAt).TotalMilliseconds < TeleopDispatchIntervalMs - 10)
+        {
+            return;
+        }
+
+        var result = await ApiClient.TeleopDriveAsync(
+            new TeleopRequest(velocityX, 0, angularVelocity),
+            RoleState.CurrentRole);
+
+        _lastDispatchedTeleopVelocityX = velocityX;
+        _lastDispatchedTeleopAngularVelocity = angularVelocity;
+        _lastTeleopDispatchAt = now;
+        _statusMessage = result.Message;
+
+        if (refreshAudit)
+        {
+            await State.RefreshAuditAsync();
+        }
+    }
+
+    private static double ComputeKeyboardVelocity(double axis, double magnitude)
+    {
+        if (Math.Abs(axis) < 0.001)
+        {
+            return 0;
+        }
+
+        return magnitude * Math.Sign(axis);
+    }
+
+    private static bool AreClose(double left, double right)
+        => double.IsNaN(left) && double.IsNaN(right)
+           || Math.Abs(left - right) < 0.001;
+
+    private void EnsureDefaults()
+    {
+        if (State.Robots.Count > 0 && string.IsNullOrWhiteSpace(_selectedRobotId))
+        {
+            _selectedRobotId = State.Robots[0].RobotId;
+        }
+
+        SyncRequestsToRobot();
+        EnsureDefaultStation();
+    }
+
+    private void SyncRequestsToRobot()
+    {
+        _missionRequest = _missionRequest with { RobotId = _selectedRobotId ?? string.Empty };
+    }
+
+    private void EnsureDefaultStation()
+    {
+        if (_selectedMissionCommand != MissionCommandType.GoToStation)
+        {
+            return;
+        }
+
+        var selectedStationExists = Stations.Any(entity => entity.EntityId == _missionRequest.TargetEntityId);
         if (!selectedStationExists)
         {
-            _request.TargetEntityId = State.MapEntities
-                .FirstOrDefault(entity => entity.Type == MapEntityType.Station)
-                ?.EntityId;
+            _missionRequest = _missionRequest with { TargetEntityId = Stations.FirstOrDefault()?.EntityId };
         }
     }
 
     private void OnStateChanged()
         => InvokeAsync(() =>
         {
-            EnsureDefaultTarget();
+            EnsureDefaults();
             StateHasChanged();
         });
 
     public void Dispose()
     {
         State.Changed -= OnStateChanged;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        State.Changed -= OnStateChanged;
+
+        if (_teleopKeyboardActive)
+        {
+            await StopTeleopKeyboardAsync(sendStop: true);
+        }
+
+        _teleopReference?.Dispose();
+    }
+
+    private string GetCenterPanelTitle() => _selectedTab switch
+    {
+        "Teleop" => "Teleop realtime control",
+        "Relocate" => "Relocate robot",
+        _ => "Mission dispatch"
+    };
+
+    private string GetCenterPanelSubtitle() => _selectedTab switch
+    {
+        "Teleop" => "Operator-armed keyboard drive with WASD shortcuts and the dedicated teleop endpoint.",
+        "Relocate" => "Explicit pose reset flow for engineering operations with the shared motion gate.",
+        _ => "Standard mission commands through the API worker bridge after live preflight passes."
+    };
+
+    private string GetTeleopModeLabel()
+    {
+        if (IsTeleopLocked)
+        {
+            return "Teleop unavailable";
+        }
+
+        if (_teleopKeyboardCommandX == 0 && _teleopKeyboardCommandAz == 0)
+        {
+            return "Teleop ready";
+        }
+
+        return "Driving";
+    }
+
+    private static string GetTeleopKeyClass(bool isActive)
+        => isActive ? "ops-teleop-key active" : "ops-teleop-key";
+
+    private string GetDispatchStateLabel() => CurrentPreflightReasons.Count == 0 ? "Ready" : "Blocked";
+
+    private string GetMissionHint() => _selectedMissionCommand switch
+    {
+        MissionCommandType.GoToStation => "A station target is required and the motion gate must pass before dispatch.",
+        MissionCommandType.ReturnToHome => "Return-to-home uses the motion gate and clears target entity selection.",
+        _ => "Non-station mission commands still respect robot connectivity and live motion safety."
+    };
+
+    private string GetConnectivityChipClass(ConnectivityStatus status) => status switch
+    {
+        ConnectivityStatus.Online => "ops-chip-ok",
+        ConnectivityStatus.Degraded => "ops-chip-warn",
+        _ => "ops-chip-danger"
+    };
+
+    private static string GetBatteryClass(int batteryPercent)
+    {
+        if (batteryPercent < 20)
+        {
+            return "ops-battery-fill low";
+        }
+
+        if (batteryPercent < 40)
+        {
+            return "ops-battery-fill warn";
+        }
+
+        return "ops-battery-fill";
+    }
+
+    private static string GetReadinessDotClass(bool isHealthy) => isHealthy ? "ops-dot ops-dot-good" : "ops-dot ops-dot-warn";
+
+    private static string GetAlarmDotClass(string severityClass) => severityClass switch
+    {
+        "danger" => "ops-dot ops-dot-danger",
+        "warn" => "ops-dot ops-dot-warn",
+        _ => "ops-dot ops-dot-good"
+    };
+
+    private static string GetAuditDotClass(MissionCommandStatus status) => status switch
+    {
+        MissionCommandStatus.Completed => "ops-dot ops-dot-good",
+        MissionCommandStatus.Accepted or MissionCommandStatus.Queued => "ops-dot ops-dot-warn",
+        _ => "ops-dot ops-dot-danger"
+    };
+
+    private string FormatEstop()
+        => IsEmergencyActive() ? "Active" : "Clear";
+
+    private bool IsEmergencyActive()
+        => SelectedRobotDetail?.Estop?.Emergency == true
+           || SelectedRobotDetail?.Estop?.DriverEmergency == true
+           || SelectedRobotDetail?.Estop?.SoftEmergency == true;
+
+    private string FormatControlOwner()
+        => SelectedRobotDetail?.ControlOwner?.Locked == true
+            ? SelectedRobotDetail.ControlOwner.NickName ?? SelectedRobotDetail.ControlOwner.Ip ?? "Locked"
+            : "Unlocked";
+
+    private string GetAlarmSummary()
+    {
+        if (SelectedRobotDetail?.Alarm is null)
+        {
+            return "No detail";
+        }
+
+        return SelectedRobotDetail.Alarm.FatalCount > 0 || SelectedRobotDetail.Alarm.ErrorCount > 0
+            ? $"{SelectedRobotDetail.Alarm.FatalCount + SelectedRobotDetail.Alarm.ErrorCount} critical/error"
+            : SelectedRobotDetail.Alarm.WarningCount > 0
+                ? $"{SelectedRobotDetail.Alarm.WarningCount} warning"
+                : "Clear";
+    }
+
+    private static bool IsMotionMission(MissionCommandType commandType)
+        => commandType is MissionCommandType.GoToStation
+            or MissionCommandType.ReturnToHome
+            or MissionCommandType.Resume
+            or MissionCommandType.Teleop;
+
+    private sealed record ReadinessItem(string Label, string Value, bool IsHealthy);
+
+    private sealed record InspectorItem(string Label, string Value);
+
+    private sealed record AuditEntryView(
+        string Operation,
+        MissionCommandStatus Status,
+        UserRole RequestedByRole,
+        string Message,
+        DateTimeOffset OccurredAt);
+
+    private sealed record AlarmDisplayItem(
+        string Severity,
+        string SeverityClass,
+        string Code,
+        string? Description,
+        string? Describe)
+    {
+        public static AlarmDisplayItem From(string severity, string severityClass, SeerAlarmItem item)
+            => new(severity, severityClass, item.Code, item.Description, item.Describe);
     }
 }

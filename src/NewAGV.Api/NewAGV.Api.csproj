@@ -13,6 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\NewAGV.Persistence\NewAGV.Persistence.csproj" />
     <ProjectReference Include="..\NewAGV.Contracts\NewAGV.Contracts.csproj" />
   </ItemGroup>
 

@@ -296,7 +296,12 @@ public record ControlPolicy(
 public record SeerTaskChainSummary(
     string Name,
     DateTimeOffset? CreatedOn,
-    TaskChainStatus? LastKnownStatus);
+    TaskChainStatus? LastKnownStatus,
+    string Availability = "Available",
+    string SourceState = "Synced",
+    DateTimeOffset? LastSyncedAt = null,
+    DateTimeOffset? MissingSince = null,
+    string? ExternalId = null);
 
 public record SeerTaskChainStatus(
     string TaskListName,
@@ -379,4 +384,6 @@ public record RealtimeEvent(
     MapEntity? MapEntity = null,
     SiteHealth? Health = null,
     string? Message = null,
-    WorkflowRunDto? WorkflowRun = null);
+    WorkflowRunDto? WorkflowRun = null,
+    long Sequence = 0,
+    int SchemaVersion = 1);
