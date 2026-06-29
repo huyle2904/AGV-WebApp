@@ -7,16 +7,16 @@ namespace NewAGV.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public sealed class MapController(AgvPlantStore store) : ControllerBase
+public sealed class MapController(MapSnapshotService mapSnapshotService) : ControllerBase
 {
     [HttpGet("entities")]
-    public ActionResult<IReadOnlyList<MapEntity>> GetEntities()
+    public async Task<ActionResult<IReadOnlyList<MapEntity>>> GetEntities(CancellationToken cancellationToken)
     {
-        return Ok(store.GetMapEntities());
+        return Ok(await mapSnapshotService.GetEntitiesAsync(cancellationToken));
     }
 
     [HttpPost("entities")]
-    public ActionResult<MapEntity> UpsertEntity([FromBody] MapEntity entity)
+    public async Task<ActionResult<MapEntity>> UpsertEntity([FromBody] MapEntity entity, CancellationToken cancellationToken)
     {
         var role = Request.ResolveRole();
         if (role < UserRole.Engineer)
@@ -28,11 +28,11 @@ public sealed class MapController(AgvPlantStore store) : ControllerBase
             ? entity with { EntityId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant() }
             : entity;
 
-        return Ok(store.UpsertMapEntity(normalized));
+        return Ok(await mapSnapshotService.UpsertEntityAsync(normalized, null, cancellationToken));
     }
 
     [HttpDelete("entities/{entityId}")]
-    public ActionResult DeleteEntity(string entityId)
+    public async Task<ActionResult> DeleteEntity(string entityId, CancellationToken cancellationToken)
     {
         var role = Request.ResolveRole();
         if (role < UserRole.Engineer)
@@ -40,6 +40,6 @@ public sealed class MapController(AgvPlantStore store) : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden);
         }
 
-        return store.DeleteMapEntity(entityId) ? NoContent() : NotFound();
+        return await mapSnapshotService.DeleteEntityAsync(entityId, cancellationToken) ? NoContent() : NotFound();
     }
 }

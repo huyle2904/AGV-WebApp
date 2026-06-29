@@ -129,3 +129,21 @@ Slice 4 result:
   existing live detail call when available.
 - Validation: `dotnet build NewAGV.sln` passed with 6 projects, 0 errors, 0
   warnings.
+
+Runtime follow-up:
+
+- Fixed API dependency injection lifetime mismatch introduced by the durable
+  taskchain catalog wiring: `TaskChainCoordinator` is now scoped and
+  `TaskChainMonitorService` resolves it through a per-iteration scope instead
+  of holding a singleton dependency.
+- Local runtime proof now passes for startup wiring: API serves Swagger on
+  `http://localhost:5222`, Worker serves internal endpoints on
+  `http://localhost:5230`, and Web root responds on `http://localhost:5209`.
+
+US-010 validation follow-up:
+
+- Added automated unit coverage in `tests/NewAGV.Api.Tests` for
+  `TaskChainCatalogService` sync-add, missing-from-source, and stale-threshold
+  behavior.
+- Added automated unit coverage in `WorkflowValidationService` proving durable
+  taskchain catalog validation blocks missing and stale taskchain references.

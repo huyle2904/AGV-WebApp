@@ -12,6 +12,9 @@ public sealed class NewAgvDbContext(DbContextOptions<NewAgvDbContext> options) :
     public DbSet<WorkflowRunEntity> WorkflowRuns => Set<WorkflowRunEntity>();
     public DbSet<WorkflowRunStepEntity> WorkflowRunSteps => Set<WorkflowRunStepEntity>();
     public DbSet<TaskChainSnapshotEntity> TaskChainSnapshots => Set<TaskChainSnapshotEntity>();
+    public DbSet<AuditEntryEntity> AuditEntries => Set<AuditEntryEntity>();
+    public DbSet<CommandAttemptEntity> CommandAttempts => Set<CommandAttemptEntity>();
+    public DbSet<MapEntitySnapshotEntity> MapEntitySnapshots => Set<MapEntitySnapshotEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -21,7 +24,7 @@ public sealed class NewAgvDbContext(DbContextOptions<NewAgvDbContext> options) :
         {
             entity.ToTable("workflow_definitions");
             entity.HasKey(item => item.Id);
-            entity.HasIndex(item => item.Name).IsUnique();
+            entity.HasIndex(item => item.Name);
             entity.Property(item => item.Name).HasMaxLength(120).IsRequired();
             entity.Property(item => item.Description).HasMaxLength(1000);
             entity.Property(item => item.AssignedRobotId).HasMaxLength(80);
@@ -100,6 +103,53 @@ public sealed class NewAgvDbContext(DbContextOptions<NewAgvDbContext> options) :
             entity.Property(item => item.Availability).HasMaxLength(40).IsRequired();
             entity.Property(item => item.LastKnownStatus).HasMaxLength(40);
             entity.Property(item => item.SourceState).HasMaxLength(40);
+        });
+
+        modelBuilder.Entity<AuditEntryEntity>(entity =>
+        {
+            entity.ToTable("audit_entries");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => item.AuditId).IsUnique();
+            entity.HasIndex(item => item.OccurredAt);
+            entity.HasIndex(item => new { item.RobotId, item.OccurredAt });
+            entity.Property(item => item.AuditId).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.RobotId).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.CommandType).HasMaxLength(40);
+            entity.Property(item => item.RequestedByRole).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Message).HasMaxLength(1000).IsRequired();
+            entity.Property(item => item.Status).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Operation).HasMaxLength(160);
+        });
+
+        modelBuilder.Entity<CommandAttemptEntity>(entity =>
+        {
+            entity.ToTable("command_attempts");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => item.CommandId).IsUnique();
+            entity.HasIndex(item => new { item.RobotId, item.CompletedAt });
+            entity.Property(item => item.CommandId).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.RobotId).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.CommandType).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.RequestedByRole).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Status).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Message).HasMaxLength(1000).IsRequired();
+            entity.Property(item => item.Source).HasMaxLength(80).IsRequired();
+            entity.Property(item => item.TargetEntityId).HasMaxLength(120);
+        });
+
+        modelBuilder.Entity<MapEntitySnapshotEntity>(entity =>
+        {
+            entity.ToTable("map_entity_snapshots");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => item.EntityId).IsUnique();
+            entity.HasIndex(item => new { item.MapName, item.LastSyncedAt });
+            entity.Property(item => item.EntityId).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.MapName).HasMaxLength(160);
+            entity.Property(item => item.Type).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Name).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.Color).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.SourceState).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.PropertiesJson).HasColumnType("jsonb");
         });
     }
 }
@@ -191,4 +241,54 @@ public sealed class TaskChainSnapshotEntity
     public DateTimeOffset LastSyncedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastSeenAt { get; set; }
     public DateTimeOffset? MissingSince { get; set; }
+}
+
+public sealed class AuditEntryEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string AuditId { get; set; } = string.Empty;
+    public string RobotId { get; set; } = string.Empty;
+    public string? CommandType { get; set; }
+    public string RequestedByRole { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
+    public string? Operation { get; set; }
+}
+
+public sealed class CommandAttemptEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string CommandId { get; set; } = string.Empty;
+    public string RobotId { get; set; } = string.Empty;
+    public string CommandType { get; set; } = string.Empty;
+    public string RequestedByRole { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public DateTimeOffset RequestedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset CompletedAt { get; set; } = DateTimeOffset.UtcNow;
+    public string Source { get; set; } = string.Empty;
+    public string? TargetEntityId { get; set; }
+    public double? VelocityX { get; set; }
+    public double? VelocityY { get; set; }
+    public bool Confirmed { get; set; }
+}
+
+public sealed class MapEntitySnapshotEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string EntityId { get; set; } = string.Empty;
+    public string? MapName { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+    public string Color { get; set; } = "#38bdf8";
+    public int Version { get; set; }
+    public string SourceState { get; set; } = "Synced";
+    public DateTimeOffset LastSyncedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? MissingSince { get; set; }
+    public string? PropertiesJson { get; set; }
 }

@@ -384,4 +384,6 @@ public record RealtimeEvent(
     MapEntity? MapEntity = null,
     SiteHealth? Health = null,
     string? Message = null,
-    WorkflowRunDto? WorkflowRun = null);
+    WorkflowRunDto? WorkflowRun = null,
+    long Sequence = 0,
+    int SchemaVersion = 1);

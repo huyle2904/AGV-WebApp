@@ -43,7 +43,7 @@ public sealed class WorkflowDefinitionService(NewAgvDbContext dbContext)
     public async Task<WorkflowDetailDto> CreateWorkflowAsync(CreateWorkflowRequest request, CancellationToken cancellationToken)
     {
         var name = request.Name.Trim();
-        await EnsureNameIsUniqueAsync(name, null, cancellationToken);
+        EnsureNameIsValid(name);
 
         var now = DateTimeOffset.UtcNow;
         var entity = new WorkflowDefinitionEntity
@@ -80,7 +80,38 @@ public sealed class WorkflowDefinitionService(NewAgvDbContext dbContext)
         }
 
         var name = request.Name.Trim();
-        await EnsureNameIsUniqueAsync(name, workflowId, cancellationToken);
+        EnsureNameIsValid(name);
+
+        if (entity.IsPublished)
+        {
+            var draft = CreateDraftClone(
+                entity,
+                name,
+                NormalizeOptional(request.Description),
+                NormalizeOptional(request.AssignedRobotId),
+                NormalizeExecutionMode(request.ExecutionMode),
+                request.RequiresConfirmation,
+                request.StopOnFailure,
+                request.ManualResume,
+                isPublished: false,
+                DateTimeOffset.UtcNow,
+                entity.Steps.Select(step => new WorkflowStepDto
+                {
+                    Sequence = step.Sequence,
+                    StepType = step.StepType,
+                    TaskChainName = step.TaskChainName,
+                    DisplayName = step.DisplayName,
+                    TimeoutSeconds = step.TimeoutSeconds,
+                    RetryCount = step.RetryCount,
+                    FailurePolicy = ParseFailurePolicy(step.FailurePolicy),
+                    Note = step.Note,
+                    StopOnFailure = step.StopOnFailure,
+                    ParametersJson = step.ParametersJson
+                }).ToList());
+            dbContext.WorkflowDefinitions.Add(draft);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return MapDetail(draft);
+        }
 
         entity.Name = name;
         entity.Description = NormalizeOptional(request.Description);
@@ -105,6 +136,14 @@ public sealed class WorkflowDefinitionService(NewAgvDbContext dbContext)
         if (entity is null)
         {
             return null;
+        }
+
+        if (entity.IsPublished)
+        {
+            var draft = CreateDraftClone(entity, entity.Name, entity.Description, entity.AssignedRobotId, entity.ExecutionMode, entity.RequiresConfirmation, entity.StopOnFailure, entity.ManualResume, isPublished: false, DateTimeOffset.UtcNow, request.Steps);
+            dbContext.WorkflowDefinitions.Add(draft);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return MapDetail(draft);
         }
 
         var existingSteps = entity.Steps.ToList();
@@ -136,29 +175,23 @@ public sealed class WorkflowDefinitionService(NewAgvDbContext dbContext)
         }
 
         var name = request.Name.Trim();
-        await EnsureNameIsUniqueAsync(name, null, cancellationToken);
+        EnsureNameIsValid(name);
 
         var now = DateTimeOffset.UtcNow;
-        var entity = new WorkflowDefinitionEntity
-        {
-            Name = name,
-            Description = source.Description,
-            Version = source.Version,
-            IsPublished = false,
-            AssignedRobotId = source.AssignedRobotId,
-            ExecutionMode = source.ExecutionMode,
-            RequiresConfirmation = source.RequiresConfirmation,
-            StopOnFailure = source.StopOnFailure,
-            ManualResume = source.ManualResume,
-            CreatedAt = now,
-            UpdatedAt = now
-        };
-
-        entity.Steps = source.Steps
-            .OrderBy(step => step.Sequence)
-            .Select((step, index) => new WorkflowStepDto
+        var entity = CreateDraftClone(
+            source,
+            name,
+            source.Description,
+            source.AssignedRobotId,
+            source.ExecutionMode,
+            source.RequiresConfirmation,
+            source.StopOnFailure,
+            source.ManualResume,
+            isPublished: false,
+            now,
+            source.Steps.Select(step => new WorkflowStepDto
             {
-                Sequence = index + 1,
+                Sequence = step.Sequence,
                 StepType = step.StepType,
                 TaskChainName = step.TaskChainName,
                 DisplayName = step.DisplayName,
@@ -168,8 +201,7 @@ public sealed class WorkflowDefinitionService(NewAgvDbContext dbContext)
                 Note = step.Note,
                 StopOnFailure = step.StopOnFailure,
                 ParametersJson = step.ParametersJson
-            })
-            .Pipe(steps => MaterializeSteps(steps, entity.Id));
+            }).ToList());
 
         dbContext.WorkflowDefinitions.Add(entity);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -185,6 +217,26 @@ public sealed class WorkflowDefinitionService(NewAgvDbContext dbContext)
         if (entity is null)
         {
             return null;
+        }
+
+        if (entity.IsPublished && !request.IsPublished)
+        {
+            var draft = CreateDraftClone(entity, entity.Name, entity.Description, entity.AssignedRobotId, entity.ExecutionMode, entity.RequiresConfirmation, entity.StopOnFailure, entity.ManualResume, isPublished: false, DateTimeOffset.UtcNow, entity.Steps.Select(step => new WorkflowStepDto
+            {
+                Sequence = step.Sequence,
+                StepType = step.StepType,
+                TaskChainName = step.TaskChainName,
+                DisplayName = step.DisplayName,
+                TimeoutSeconds = step.TimeoutSeconds,
+                RetryCount = step.RetryCount,
+                FailurePolicy = ParseFailurePolicy(step.FailurePolicy),
+                Note = step.Note,
+                StopOnFailure = step.StopOnFailure,
+                ParametersJson = step.ParametersJson
+            }).ToList());
+            dbContext.WorkflowDefinitions.Add(draft);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return MapDetail(draft);
         }
 
         entity.IsPublished = request.IsPublished;
@@ -220,20 +272,11 @@ public sealed class WorkflowDefinitionService(NewAgvDbContext dbContext)
         return true;
     }
 
-    private async Task EnsureNameIsUniqueAsync(string name, Guid? currentWorkflowId, CancellationToken cancellationToken)
+    private static void EnsureNameIsValid(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
             throw new InvalidOperationException("Workflow name is required.");
-        }
-
-        var exists = await dbContext.WorkflowDefinitions.AnyAsync(
-            item => item.Name == name && item.Id != currentWorkflowId,
-            cancellationToken);
-
-        if (exists)
-        {
-            throw new InvalidOperationException($"Workflow name '{name}' already exists.");
         }
     }
 
@@ -307,6 +350,39 @@ public sealed class WorkflowDefinitionService(NewAgvDbContext dbContext)
         => Enum.TryParse<WorkflowFailurePolicy>(value, true, out var policy)
             ? policy
             : WorkflowFailurePolicy.StopWorkflow;
+
+    private static WorkflowDefinitionEntity CreateDraftClone(
+        WorkflowDefinitionEntity source,
+        string name,
+        string? description,
+        string? assignedRobotId,
+        string executionMode,
+        bool requiresConfirmation,
+        bool stopOnFailure,
+        bool manualResume,
+        bool isPublished,
+        DateTimeOffset now,
+        IReadOnlyList<WorkflowStepDto> steps)
+    {
+        var clone = new WorkflowDefinitionEntity
+        {
+            Name = name,
+            Description = description,
+            Version = source.Version + 1,
+            IsPublished = isPublished,
+            AssignedRobotId = assignedRobotId,
+            ExecutionMode = executionMode,
+            RequiresConfirmation = requiresConfirmation,
+            StopOnFailure = stopOnFailure,
+            ManualResume = manualResume,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        clone.Steps = MaterializeSteps(steps, clone.Id);
+
+        return clone;
+    }
 }
 
 file static class WorkflowDefinitionServiceLinqExtensions

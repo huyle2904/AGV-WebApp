@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 namespace NewAGV.Api.Services;
 
 public sealed class TaskChainMonitorService(
-    TaskChainCoordinator coordinator,
+    IServiceScopeFactory scopeFactory,
     IOptions<IntegrationOptions> options,
     ILogger<TaskChainMonitorService> logger) : BackgroundService
 {
@@ -15,6 +15,8 @@ public sealed class TaskChainMonitorService(
         {
             try
             {
+                using var scope = scopeFactory.CreateScope();
+                var coordinator = scope.ServiceProvider.GetRequiredService<TaskChainCoordinator>();
                 await coordinator.PollActiveRunsAsync(stoppingToken);
             }
             catch (Exception exception) when (!stoppingToken.IsCancellationRequested)

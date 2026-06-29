@@ -6,11 +6,11 @@ namespace NewAGV.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public sealed class AuditController(AgvPlantStore store) : ControllerBase
+public sealed class AuditController(AuditLogService auditLogService) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<IReadOnlyList<MissionAuditEntry>> GetAudits()
+    public async Task<ActionResult<IReadOnlyList<MissionAuditEntry>>> GetAudits(CancellationToken cancellationToken)
     {
-        return Ok(store.GetAudits());
+        return Ok(await auditLogService.GetRecentAsync(cancellationToken));
     }
 }

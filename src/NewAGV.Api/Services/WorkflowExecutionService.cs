@@ -1,8 +1,6 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using NewAGV.Api.Hubs;
 using NewAGV.Contracts;
 using NewAGV.Persistence;
 
@@ -14,7 +12,7 @@ public sealed class WorkflowExecutionService(
     WorkflowValidationService validationService,
     TaskChainCoordinator taskChainCoordinator,
     AgvPlantStore plantStore,
-    IHubContext<TelemetryHub> hubContext,
+    TelemetryEventPublisher telemetryPublisher,
     IOptions<IntegrationOptions> integrationOptions,
     SeerWorkerClient workerClient)
 {
@@ -539,8 +537,7 @@ public sealed class WorkflowExecutionService(
 
     private async Task EmitAsync(string eventType, WorkflowRunEntity run, CancellationToken cancellationToken)
     {
-        await hubContext.Clients.All.SendAsync(
-            "ReceiveTelemetry",
+        await telemetryPublisher.PublishAsync(
             new RealtimeEvent(eventType, DateTimeOffset.UtcNow, WorkflowRun: MapRun(run), Message: run.ErrorMessage),
             cancellationToken);
     }

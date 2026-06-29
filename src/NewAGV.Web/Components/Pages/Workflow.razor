@@ -430,6 +430,9 @@
     private DateTimeOffset? _lastRuntimeEventAt;
     private string? _lastRuntimeEventMessage;
     private Timer? _runtimeClock;
+    private long _lastTelemetrySequence;
+    private int _lastTelemetrySchemaVersion;
+    private bool _runtimeRefreshInFlight;
 
     private IReadOnlyList<WorkflowSummaryDto> FilteredWorkflows => _workflows.Where(item => string.IsNullOrWhiteSpace(_searchText)
         || item.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
@@ -448,6 +451,7 @@
     {
         await TelemetryClient.StartAsync();
         TelemetryClient.TelemetryReceived += HandleTelemetry;
+        TelemetryClient.TelemetryResynced += HandleTelemetryResynced;
         _runtimeClock = new Timer(_ =>
         {
             if (_selectedTab != "Runtime" || _activeRun is null)
@@ -625,7 +629,7 @@
         _isBusy = true;
         try
         {
-            await ApiClient.UpdateWorkflowAsync(_selectedWorkflow.Id, new UpdateWorkflowRequest
+            var saved = await ApiClient.UpdateWorkflowAsync(_selectedWorkflow.Id, new UpdateWorkflowRequest
             {
                 Name = _selectedWorkflow.Name,
                 Description = _selectedWorkflow.Description,
@@ -636,9 +640,9 @@
                 ManualResume = _selectedWorkflow.ManualResume,
                 IsPublished = _selectedWorkflow.IsPublished
             });
-            await ApiClient.ReplaceWorkflowStepsAsync(_selectedWorkflow.Id, new ReplaceWorkflowStepsRequest { Steps = _selectedWorkflow.Steps.OrderBy(step => step.Sequence).ToList() });
+            await ApiClient.ReplaceWorkflowStepsAsync(saved.Id, new ReplaceWorkflowStepsRequest { Steps = _selectedWorkflow.Steps.OrderBy(step => step.Sequence).ToList() });
             await RefreshWorkflowListAsync();
-            await SelectWorkflowAsync(_selectedWorkflow.Id);
+            await SelectWorkflowAsync(saved.Id);
         }
         catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
         {
@@ -1070,6 +1074,12 @@
 
     private void HandleTelemetry(RealtimeEvent telemetry)
     {
+        if (ShouldRefreshRuntimeSnapshot(telemetry))
+        {
+            _ = InvokeAsync(() => RefreshRuntimeAfterGapAsync("telemetry sequence gap or schema change"));
+            return;
+        }
+
         if (telemetry.WorkflowRun is null || string.IsNullOrWhiteSpace(_selectedRobotId))
         {
             return;
@@ -1094,9 +1104,63 @@
         });
     }
 
+    private bool ShouldRefreshRuntimeSnapshot(RealtimeEvent telemetry)
+    {
+        if (telemetry.SchemaVersion <= 0)
+        {
+            return false;
+        }
+
+        if (_lastTelemetrySchemaVersion != 0 && telemetry.SchemaVersion != _lastTelemetrySchemaVersion)
+        {
+            _lastTelemetrySchemaVersion = telemetry.SchemaVersion;
+            _lastTelemetrySequence = telemetry.Sequence;
+            return true;
+        }
+
+        _lastTelemetrySchemaVersion = telemetry.SchemaVersion;
+
+        if (telemetry.Sequence > 0 && _lastTelemetrySequence > 0 && telemetry.Sequence != _lastTelemetrySequence + 1)
+        {
+            _lastTelemetrySequence = telemetry.Sequence;
+            return true;
+        }
+
+        if (telemetry.Sequence > 0)
+        {
+            _lastTelemetrySequence = telemetry.Sequence;
+        }
+
+        return false;
+    }
+
+    private void HandleTelemetryResynced()
+        => _ = InvokeAsync(() => RefreshRuntimeAfterGapAsync("telemetry hub reconnected"));
+
+    private async Task RefreshRuntimeAfterGapAsync(string reason)
+    {
+        if (_runtimeRefreshInFlight)
+        {
+            return;
+        }
+
+        _runtimeRefreshInFlight = true;
+        try
+        {
+            _errorMessage = $"Realtime gap detected; refreshing workflow snapshot from API ({reason}).";
+            await RefreshRuntimeAsync();
+            StateHasChanged();
+        }
+        finally
+        {
+            _runtimeRefreshInFlight = false;
+        }
+    }
+
     public void Dispose()
     {
         _runtimeClock?.Dispose();
         TelemetryClient.TelemetryReceived -= HandleTelemetry;
+        TelemetryClient.TelemetryResynced -= HandleTelemetryResynced;
     }
 }

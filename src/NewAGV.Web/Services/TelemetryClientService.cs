@@ -10,6 +10,7 @@ public sealed class TelemetryClientService(IOptions<ApiOptions> apiOptions, ILog
     private bool _started;
 
     public event Action<RealtimeEvent>? TelemetryReceived;
+    public event Action? TelemetryResynced;
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -33,6 +34,7 @@ public sealed class TelemetryClientService(IOptions<ApiOptions> apiOptions, ILog
         _connection.Reconnected += connectionId =>
         {
             logger.LogInformation("Telemetry hub reconnected with connection id {ConnectionId}.", connectionId);
+            TelemetryResynced?.Invoke();
             return Task.CompletedTask;
         };
 
